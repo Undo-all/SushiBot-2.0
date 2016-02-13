@@ -14,6 +14,8 @@ waitForever :: IO ()
 waitForever = forever $ threadDelay maxBound
 
 main :: IO ()
-main = do makeBot "SushiBot-2" ["#lounge", "#comfy"] (M.fromList [("say", Command "" (1, Nothing) (say . T.unwords))]) [] "irc.sushigirl.tokyo" 6667
+main = do makeBot "SushiBot-2" ["#lounge", "#comfy"]
+                  (M.fromList [("say", Command "" (1, Nothing) (say . T.unwords)), ("act", Command "" (1, Nothing) (act . T.unwords))]) [] 
+                  "irc.sushigirl.tokyo" 6667
           waitForever
 

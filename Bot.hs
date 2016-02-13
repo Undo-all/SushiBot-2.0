@@ -5,11 +5,10 @@ module Bot
 , Command(..)
 , Pattern(..)
 , makeBot
---, sendRaw
 , say
 , privmsg
---, act
---, privact
+, act
+, privact
 ) where
 
 
@@ -114,13 +113,21 @@ privmsg' h chan xs = T.hPutStrLn h $ T.concat ["PRIVMSG ", chan, " :", xs]
 
 privmsg :: Text -> Text -> ReaderT RequestInfo IO ()
 privmsg chan xs = do
-    h    <- asks reqHandle
+    h <- asks reqHandle
     liftIO $ privmsg' h chan xs
 
 say :: Text -> ReaderT RequestInfo IO ()
 say xs = do
     chan <- asks reqChan
     privmsg chan xs
+
+privact :: Text -> Text -> ReaderT RequestInfo IO ()
+privact chan xs = privmsg chan $ T.concat ["\0001ACTION ", xs, "\0001"]
+
+act :: Text -> ReaderT RequestInfo IO ()
+act xs = do
+    chan <- asks reqChan
+    privact chan xs
 
 makeBot :: Text -> [Text] -> Map Text Command -> [Pattern] -> HostName -> Int -> IO Bot
 makeBot name chans comms patterns host port = do
@@ -132,8 +139,7 @@ makeBot name chans comms patterns host port = do
     T.hPutStrLn h $ T.concat ["NICK ", name]
     let bot = Bot name h ref n comms patterns
     readMVar wait
-    xs   <- M.fromList <$> mapM (joinChan bot) chans 
-    atomicWriteIORef ref xs
+    mapM_ (joinChan bot) chans 
     return bot
 
 mainLoop :: MVar () -> Handle -> IORef (Map Text (ThreadId, InChan PrivMsg)) -> IO ()
@@ -142,19 +148,23 @@ mainLoop wait h ref = forever $ do
     xs    <- T.hGetLine h
     T.putStrLn xs
     case parseMsg xs of
-      Just (Ping xs)    -> do
-          putMVar wait ()
-          T.hPutStrLn h $ T.concat ["PONG :", xs]
-      Just (PM chan pm) -> 
-          flip writeChan pm . snd . fromMaybe undefined $ M.lookup chan chans
-      Nothing           -> return ()
+        Just (Ping xs)    -> do
+            T.hPutStrLn h $ T.concat ["PONG :", xs]
+            tryPutMVar wait ()
+            return ()
+        Just (PM chan pm) ->
+            case M.lookup chan chans of
+                Just (_, inchan) -> writeChan inchan pm 
+                Nothing          -> return ()
+        Nothing           -> return ()
 
-joinChan :: Bot -> Text -> IO (Text, (ThreadId, InChan PrivMsg))
-joinChan bot@(Bot _ h _ _ _ _) chan = do
+joinChan :: Bot -> Text -> IO ()
+joinChan bot@(Bot _ h chans _ _ _) chan = do
     T.hPutStrLn h $ T.concat ["JOIN ", chan]
     (inchan, outchan) <- newChan
     n                 <- forkIO $ handleChan bot outchan chan 
-    return (chan, (n, inchan))
+    let x = (chan, (n, inchan))
+    atomicModifyIORef' chans (\m -> (M.insert chan (n, inchan) m, ()))
 
 handleChan :: Bot -> OutChan PrivMsg -> Text -> IO ()
 handleChan bot outchan chan = forever $ do
@@ -167,17 +177,17 @@ handleChan bot outchan chan = forever $ do
 call :: Bot -> Text -> Text -> Text -> [Text] -> IO ()
 call bot usr chan comm args =
     case M.lookup comm (botCommands bot) of
-      Nothing                    ->
-          privmsg' (botHandle bot) chan $ T.append "Command not found: " comm
-      Just (Command _ numArgs f) -> do
-          case checkNumArgs numArgs (length args) of
-            Nothing  -> 
-                runReaderT (f args) (RequestInfo chan usr (botHandle bot))
-            Just err -> privmsg' (botHandle bot) chan $  
-                T.concat [ "Incorrect number of arguments to command "
-                         , comm, " (expected ", err, ", got "
-                         , T.pack . show . length $ args, ")"
-                         ]
+        Nothing                    ->
+            privmsg' (botHandle bot) chan $ T.append "Command not found: " comm
+        Just (Command _ numArgs f) -> do
+            case checkNumArgs numArgs (length args) of
+              Nothing  -> 
+                  runReaderT (f args) (RequestInfo chan usr (botHandle bot))
+              Just err -> privmsg' (botHandle bot) chan $  
+                  T.concat [ "Incorrect number of arguments to command "
+                           , comm, " (expected ", err, ", got "
+                           , T.pack . show . length $ args, ")"
+                           ]
 
 checkNumArgs :: (Int, Maybe Int) -> Int -> Maybe Text
 checkNumArgs (x, Just y) n
