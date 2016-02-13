@@ -283,7 +283,7 @@ commands = M.fromList [ ("info", commandInfo)
                       ]
 
 main :: IO ()
-main = do makeBot "SushiBot-2" channels commands [] 
+main = do makeBot "SushiBot" channels commands [] 
                   "irc.sushigirl.tokyo" 6667
           waitForever
 
