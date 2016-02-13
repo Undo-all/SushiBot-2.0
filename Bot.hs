@@ -4,6 +4,7 @@ module Bot
 ( Bot(..)
 , Command(..)
 , Pattern(..)
+, RequestInfo(..)
 , makeBot
 , say
 , privmsg
@@ -146,7 +147,6 @@ mainLoop :: MVar () -> Handle -> IORef (Map Text (ThreadId, InChan PrivMsg)) -> 
 mainLoop wait h ref = forever $ do
     chans <- readIORef ref
     xs    <- T.hGetLine h
-    T.putStrLn xs
     case parseMsg xs of
         Just (Ping xs)    -> do
             T.hPutStrLn h $ T.concat ["PONG :", xs]
