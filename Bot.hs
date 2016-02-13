@@ -163,7 +163,6 @@ joinChan bot@(Bot _ h chans _ _ _) chan = do
     T.hPutStrLn h $ T.concat ["JOIN ", chan]
     (inchan, outchan) <- newChan
     n                 <- forkIO $ handleChan bot outchan chan 
-    let x = (chan, (n, inchan))
     atomicModifyIORef' chans (\m -> (M.insert chan (n, inchan) m, ()))
 
 handleChan :: Bot -> OutChan PrivMsg -> Text -> IO ()
