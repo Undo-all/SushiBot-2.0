@@ -3,11 +3,14 @@
 module Main (main) where
 
 import Bot
+import Data.Char
+import Data.Maybe
 import Control.Monad
 import System.Random
 import Data.Map (Map)
 import System.Process
 import Data.Text (Text)
+import Text.HTML.Scalpel
 import Control.Concurrent
 import Control.Monad.Reader
 import qualified Data.Map as M
@@ -18,6 +21,9 @@ listItems :: [Text] -> Text
 listItems [x]    = x
 listItems [x, y] = T.concat [x, " and ", y]
 listItems (x:xs) = T.concat [x, ", ", listItems xs]
+
+choice :: [a] -> IO a
+choice xs = (xs !!) <$> randomRIO (0, length xs - 1)
 
 commandInfo :: Command
 commandInfo =
@@ -165,7 +171,7 @@ commandWeebMedia =
         "get a random anime or manga off ANN"
         (0, Just 0)
         weebmedia
-  where weebmedia _ = do n <- liftIO (randomRIO (1, 17824))
+  where weebmedia _ = do n <- liftIO (randomRIO (1, 17824) :: IO Int)
                          say (T.append root (T.pack $ show n))
         root        = "http://www.animenewsnetwork.com/\
                       \encyclopedia/manga.php?id="
@@ -198,6 +204,57 @@ command8ball =
                     , "Very doubtful."
                     ]
 
+commandCuddle :: Command
+commandCuddle =
+    Command
+        "cuddle a channel, or a person"
+        (0, Just 1)
+        cuddle
+  where cuddle []  = liftIO randomHug >>= say
+        cuddle [n] = do usr <- asks reqUser
+                        hug <- liftIO randomHug
+                        privmsg n $ T.concat ["From ", n, ": ", hug]
+        randomHug  = do n <- randomRIO (0, 1000) :: IO Int
+                        if n == 0
+                          then return "Fuck off"
+                          else (["(>^_^)>", "<(^o^<)", "＼(^o^)／"] !!) <$> 
+                               randomRIO (0, 2)
+
+commandGelbooru :: Command
+commandGelbooru =
+    Command
+        "get a random image with the specifified tags from gelbooru"
+        (0, Nothing)
+        (\xs -> liftIO (gelbooru xs) >>= say . T.pack)
+  where gelbooru xs = do
+            np   <- fromMaybe 0 <$> scrapeURL (root xs ++ "0") numPages
+            let n = if np `div` 42 > 50 then 50 * 42 else np
+            page <- ((root xs++) . show) <$> (randomRIO (0, n) :: IO Int)
+            imgs <- scrapeURL page images :: IO (Maybe [String])
+            case imgs of
+                Nothing   -> noImages
+                Just imgs ->
+                    if null imgs
+                        then noImages
+                        else do img <- choice imgs
+                                return $ "http://gelbooru.com/" ++ img
+        root xs     = case xs of
+                          [] -> "http://gelbooru.com/index.php?page=post&\
+                                \s=list&pid="
+                          _  -> "http://gelbooru.com/index.php?page=post&\
+                                \s=list&tags=" ++
+                                T.unpack (T.intercalate "+" xs) ++
+                                "&pid="
+        numPages    = do
+            x <- attr ("href" :: String) $ ("a" :: String) @: 
+                 [("alt" :: String) @= "last page"]
+            let n = reverse . takeWhile isDigit . reverse $ x
+            return (read n :: Int)
+        images      = do
+            let link = attr ("href" :: String) $ ("a" :: String) @: []
+            chroots (("span" :: String) @: [hasClass ("thumb" :: String)]) link
+        noImages    = return "No images with the specified tags found."
+
 -- This blocks the main thread forever. I'm sure there's a cleaner way to
 -- do this, but this is what I'm doin'.
 waitForever :: IO ()
@@ -221,6 +278,8 @@ commands = M.fromList [ ("info", commandInfo)
                       , ("order", commandOrder)
                       , ("weebmedia", commandWeebMedia) 
                       , ("8ball", command8ball)
+                      , ("cuddle", commandCuddle)
+                      , ("gelbooru", commandGelbooru)
                       ]
 
 main :: IO ()
