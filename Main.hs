@@ -122,13 +122,14 @@ commandKill =
                    , "his self", "her self", "its self", "yourself", "bot"
                    , "it self", "xemself", "bots", "sushi", "undoall"
                    , "thyself", "thy self", "all bots", "sushi bot"
+                   , "themselves", "them selves", "themself", "them self"
                    ]
         kills n  = T.concat [ "If a shitty IRC bot could kill ", n
                             , ", than someone would have done it already."
                             ]
         suicide  = "I would link to a suicide hotline, but considering the \
-                   \that you're trying to use an IRC bot to kill yourself, \
-                   \I'm not too worried."
+                   \fact that you're trying to use an IRC bot to kill \
+                   \yourself, I'm not too worried."
 
 commandFortune :: Command
 commandFortune =
@@ -148,7 +149,7 @@ commandLewd =
         lewd
   where lewd ["me"] = asks reqUser >>= act . refuse
         lewd [n]    = act (refuse n)
-        refuse n    = T.concat ["refuses to enter", n, "'s magical realm"]
+        refuse n    = T.concat ["refuses to enter ", n, "'s magical realm"]
 
 commandFlip :: Command
 commandFlip =
