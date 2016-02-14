@@ -184,7 +184,7 @@ commandOrder =
         order
   where order [sushi] = do
             menu <- liftIO getMenu
-            case M.lookup sushi menu of
+            case M.lookup (T.toLower sushi) menu of
                 Just art -> mapM_ say art
                 Nothing  -> say "I'm not familiar with that kind of sushi."
 
