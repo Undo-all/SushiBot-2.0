@@ -4,6 +4,7 @@ module Main (main) where
 
 import Bot
 import Data.Char
+import Data.Time
 import Data.Maybe
 import Control.Monad
 import System.Random
@@ -294,6 +295,14 @@ commandGetSyntax =
                                             ]
                          Nothing   -> say $ "Command not found: " `T.append` n
 
+commandTime :: Command
+commandTime =
+    Command
+        "Get time from the computer that SushiBot is running on."
+        ""
+        (0, Just 0)
+        (\_ -> liftIO (readProcess "date" [] []) >>= say . T.pack)
+
 -- This blocks the main thread forever. I'm sure there's a cleaner way to
 -- do this, but this is what I'm doin'.
 waitForever :: IO ()
@@ -320,6 +329,7 @@ commands = M.fromList [ ("info", commandInfo)
                       , ("cuddle", commandCuddle)
                       , ("gelbooru", commandGelbooru)
                       , ("syntax", commandGetSyntax)
+                      , ("time", commandTime)
                       ]
 
 main :: IO ()
