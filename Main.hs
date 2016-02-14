@@ -28,7 +28,8 @@ choice xs = (xs !!) <$> randomRIO (0, length xs - 1)
 commandInfo :: Command
 commandInfo =
     Command
-        "show general info about SushiBot"
+        "Show general info about SushiBot."
+        ""
         (0, Just 0)
         (\_ -> say info)
   where info = "SushiBot is a bot written in Haskell by the god-like being \
@@ -37,34 +38,44 @@ commandInfo =
 commandHelp :: Command
 commandHelp =
     Command
-        "list availible commands"
-        (0, Just 0)
+        "List availible commands, or get help with a specific command."
+        "(command)"
+        (0, Just 1)
         help
-  where help _ = do usr <- asks reqUser
-                    say "List of commands sent in a PM."
-                    mapM_ (privmsg usr) xs
-        xs     = zipWith (\x y -> T.concat [x, " - ", y]) 
-                         (M.keys commands)
-                         (map commandDesc (M.elems commands))
+  where help [c] = case M.lookup c commands of
+                       Just comm -> do say (commandDesc comm)
+                                       say $ T.concat [ "Syntax: !", c, " "
+                                                      , commandSyntax comm
+                                                      ]
+                       Nothing   -> say $ "Command not found: " `T.append` c
+        help []  = do usr <- asks reqUser
+                      say "List of commands sent in a PM."
+                      mapM_ (privmsg usr) xs
+        xs      = zipWith (\x y -> T.concat [x, " - ", y]) 
+                          (M.keys commands)
+                          (map commandDesc (M.elems commands))
 
 commandSay :: Command
 commandSay =
     Command
-        "say something"
+        "Say something."
+        "[sentence]"
         (1, Nothing)
         (say . T.unwords)
 
 commandAct :: Command
 commandAct =
     Command
-        "do an action"
+        "Do an action."
+        "[action]"
         (1, Nothing)
         (act . T.unwords)
 
 commandSource :: Command
 commandSource =
     Command
-        "get a link to the source code"
+        "Get a link to the source code."
+        ""
         (0, Just 0)
         (\_ -> say source)
   where source = "The source can be found at \
@@ -73,7 +84,8 @@ commandSource =
 commandSlap :: Command
 commandSlap =
     Command
-        "slap someone (or multiple people) with a large trout"
+        "Slap someone (or multiple people) with a large trout"
+        "[user | users]"
         (1, Nothing)
         (\xs -> act $ slap (listItems xs))
   where slap xs = T.concat ["slaps ", xs, " with a large trout."]
@@ -81,19 +93,21 @@ commandSlap =
 commandMix :: Command
 commandMix =
     Command
-        "mix two or more drinks"
+        "Mix two or more drinks."
+        "[drinks]"
         (2, Nothing)
         mix
   where mix xs = do
             usr <- asks reqUser
             act $ T.concat [ "skillfully mixes ", listItems xs
-                           , "and slides it to ", usr
+                           , " and slides it to ", usr
                            ]
 
 commandKill :: Command
 commandKill =
     Command
-        "kill someone"
+        "Kill someone!"
+        "[user]"
         (1, Just 1)
         kill
   where kill [n] 
@@ -105,18 +119,21 @@ commandKill =
                   else say $ kills n
         fuckYous = ["SushiBot", "myself", "hisself", "herself", "itself"
                    , "his self", "her self", "its self", "yourself", "bot"
+                   , "it self", "xemself", "bots", "sushi", "undoall"
+                   , "thyself", "thy self", "all bots", "sushi bot"
                    ]
         kills n  = T.concat [ "If a shitty IRC bot could kill ", n
                             , ", than someone would have done it already."
                             ]
         suicide  = "I would link to a suicide hotline, but considering the \
                    \that you're trying to use an IRC bot to kill yourself, \
-                   \I'm not too worried"
+                   \I'm not too worried."
 
 commandFortune :: Command
 commandFortune =
     Command
-        "a direct call to the unix command 'fortune'"
+        "A direct call to the unix command 'fortune'."
+        ""
         (0, Just 0)
         (\_ -> liftIO readFortune >>= mapM_ (say . T.pack) . lines . init)
   where readFortune = readProcess "fortune" [] []
@@ -124,7 +141,8 @@ commandFortune =
 commandLewd :: Command
 commandLewd =
     Command
-        "lewd a senpai :3"
+        "Lewd a senpai :3"
+        "[user]"
         (1, Just 1)
         lewd
   where lewd ["me"] = asks reqUser >>= act . refuse
@@ -134,7 +152,8 @@ commandLewd =
 commandFlip :: Command
 commandFlip =
     Command
-        "flip a coin"
+        "Flip a coin."
+        ""
         (0, Just 0)
         (\_ -> liftIO ((["Heads.", "Tails."] !!) <$> randomRIO (0, 1)) >>= say)
 
@@ -149,14 +168,16 @@ getMenu = fmap (parse M.empty . T.lines) file
 commandMenu :: Command
 commandMenu = 
     Command
-        "list sushi availible for order"
+        "List sushi availible for order."
+        ""
         (0, Just 0)
         (\_ -> liftIO getMenu >>= say . listItems . M.keys)
 
 commandOrder :: Command
 commandOrder =
     Command
-        "order some sushi"
+        "Order some sushi."
+        "[sushi]"
         (1, Just 1)
         order
   where order [sushi] = do
@@ -168,7 +189,8 @@ commandOrder =
 commandWeebMedia :: Command
 commandWeebMedia =
     Command
-        "get a random anime or manga off ANN"
+        "Get a random anime or manga off ANN."
+        ""
         (0, Just 0)
         weebmedia
   where weebmedia _ = do n <- liftIO (randomRIO (1, 17824) :: IO Int)
@@ -179,7 +201,8 @@ commandWeebMedia =
 command8ball :: Command
 command8ball =
     Command
-        "ask the 8ball a question and get a wise (random) answer"
+        "Ask the 8ball a question and get a wise (random) answer."
+        "[question]"
         (0, Nothing)
         (\_ -> liftIO ((responses !!) <$> randomRIO (0, 19)) >>= say)
   where responses = [ "It is certain."
@@ -207,13 +230,14 @@ command8ball =
 commandCuddle :: Command
 commandCuddle =
     Command
-        "cuddle a channel, or a person"
+        "Send cuddles to a person, a channel, or just in general."
+        "(user | channel)"
         (0, Just 1)
         cuddle
   where cuddle []  = liftIO randomHug >>= say
         cuddle [n] = do usr <- asks reqUser
                         hug <- liftIO randomHug
-                        privmsg n $ T.concat ["From ", n, ": ", hug]
+                        privmsg n $ T.concat ["From ", usr, ": ", hug]
         randomHug  = do n <- randomRIO (0, 1000) :: IO Int
                         if n == 0
                           then return "Fuck off"
@@ -223,7 +247,8 @@ commandCuddle =
 commandGelbooru :: Command
 commandGelbooru =
     Command
-        "get a random image with the specifified tags from gelbooru"
+        "Get a random image with the specifified tags from gelbooru."
+        "(tags)"
         (0, Nothing)
         (\xs -> liftIO (gelbooru xs) >>= say . T.pack)
   where gelbooru xs = do
@@ -255,6 +280,20 @@ commandGelbooru =
             chroots (("span" :: String) @: [hasClass ("thumb" :: String)]) link
         noImages    = return "No images with the specified tags found."
 
+commandGetSyntax :: Command
+commandGetSyntax =
+    Command
+        "Get the syntax of a command."
+        "[command]"
+        (1, Just 1)
+        syntax
+  where syntax [n] = case M.lookup n commands of
+                         Just comm ->
+                             say $ T.concat [ "Syntax: !", n, " "
+                                            , commandSyntax comm
+                                            ]
+                         Nothing   -> say $ "Command not found: " `T.append` n
+
 -- This blocks the main thread forever. I'm sure there's a cleaner way to
 -- do this, but this is what I'm doin'.
 waitForever :: IO ()
@@ -280,6 +319,7 @@ commands = M.fromList [ ("info", commandInfo)
                       , ("8ball", command8ball)
                       , ("cuddle", commandCuddle)
                       , ("gelbooru", commandGelbooru)
+                      , ("syntax", commandGetSyntax)
                       ]
 
 main :: IO ()

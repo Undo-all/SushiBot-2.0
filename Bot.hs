@@ -102,9 +102,10 @@ data RequestInfo = RequestInfo
                  }
 
 data Command = Command
-             { commandDesc :: Text
-             , commandArgs :: (Int, Maybe Int)
-             , commandFunc :: [Text] -> ReaderT RequestInfo IO ()
+             { commandDesc   :: Text
+             , commandSyntax :: Text
+             , commandArgs   :: (Int, Maybe Int)
+             , commandFunc   :: [Text] -> ReaderT RequestInfo IO ()
              }
 
 type Pattern = Text -> ReaderT RequestInfo IO ()
@@ -176,9 +177,9 @@ handleChan bot outchan chan = forever $ do
 call :: Bot -> Text -> Text -> Text -> [Text] -> IO ()
 call bot usr chan comm args =
     case M.lookup comm (botCommands bot) of
-        Nothing                    ->
+        Nothing                      ->
             privmsg' (botHandle bot) chan $ T.append "Command not found: " comm
-        Just (Command _ numArgs f) -> do
+        Just (Command _ _ numArgs f) -> do
             case checkNumArgs numArgs (length args) of
               Nothing  -> 
                   runReaderT (f args) (RequestInfo chan usr (botHandle bot))
