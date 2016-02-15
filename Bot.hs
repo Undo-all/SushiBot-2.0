@@ -12,22 +12,20 @@ module Bot
 , privact
 ) where
 
-
 import Network
 import Data.Char
 import System.IO
 import Data.IORef
 import Data.Maybe
 import Control.Monad
-import Data.Map (Map)
 import Data.Text (Text)
 import Control.Applicative
 import Control.Monad.Reader
-import qualified Data.Map as M
+import Data.Map.Strict (Map)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import Data.Attoparsec.Text (Parser)
 import Control.Concurrent.Chan.Unagi
+import qualified Data.Map.Strict as M
 import Control.Concurrent hiding (newChan, readChan, writeChan)
 
 data Msg = Ping Text
@@ -45,46 +43,49 @@ parseMsg xs
     | otherwise             = parsePM xs
 
 parsePM :: Text -> Maybe Msg
-parsePM xs = do
-    pm <- do
-        (PrivMsg user xs, chan) <- parsePrivMsg xs
-        if T.head xs == '!' && T.length xs >= 2 && xs `T.index` 2 /= '!'
-          then let (comm:args) = getArgs [] [] False (tail . T.unpack $ xs)
-               in return (Call user comm args, chan)
-          else return (PrivMsg user xs, chan)
-    return $ uncurry (flip PM) pm
+parsePM xs = uncurry PM . fmap parseCall <$> parsePrivMsg xs
+  where parseCall (PrivMsg user xs)
+            | isCommand xs = let (comm:args) = getArgs (T.tail xs)
+                             in Call user comm args
+            | otherwise    = PrivMsg user xs
+        isCommand xs =
+            T.head xs == '!' && T.length xs >= 2 && xs `T.index` 2 /= '!'
 
-getArgs :: String -> [Text] -> Bool -> String -> [Text]
-getArgs tmp res _ []
+getArgs :: Text -> [Text]
+getArgs = getArgs' [] [] False . T.unpack
+
+getArgs' :: String -> [Text] -> Bool -> String -> [Text]
+getArgs' tmp res _ []
     | null tmp  = reverse res
     | otherwise = reverse (T.pack (reverse tmp):res)
-getArgs tmp res True ('\\':'"':xs) = getArgs ('"':tmp) res True xs
-getArgs tmp res True ('"':xs)      =
-    getArgs [] (T.pack (reverse tmp):res) False xs
-getArgs tmp res True (c:xs)        = getArgs (c:tmp) res True xs
-getArgs tmp res False ('"':xs)
-    | null tmp  = getArgs [] res True xs
-    | otherwise = getArgs [] (T.pack (reverse tmp):res) True xs
-getArgs tmp res False (c:xs) 
+getArgs' tmp res True ('\\':'"':xs) = getArgs' ('"':tmp) res True xs
+getArgs' tmp res True ('"':xs)      =
+    getArgs' [] (T.pack (reverse tmp):res) False xs
+getArgs' tmp res True (c:xs)        = getArgs' (c:tmp) res True xs
+getArgs' tmp res False ('"':xs)
+    | null tmp  = getArgs' [] res True xs
+    | otherwise = getArgs' [] (T.pack (reverse tmp):res) True xs
+getArgs' tmp res False (c:xs) 
     | isSpace c =
       if null tmp
-        then getArgs [] res False xs 
-        else getArgs [] (T.pack (reverse tmp):res) False xs
-    | otherwise = getArgs (c:tmp) res False xs
+        then getArgs' [] res False xs 
+        else getArgs' [] (T.pack (reverse tmp):res) False xs
+    | otherwise = getArgs' (c:tmp) res False xs
 
-parsePrivMsg :: Text -> Maybe (PrivMsg, Text)
-parsePrivMsg t0 = do
-    guard (T.head t0 == ':')
+-- Pls let ApplicativeDo come out soon
+parsePrivMsg :: Text -> Maybe (Text, PrivMsg)
+parsePrivMsg t0 = 
+    guard (T.head t0 == ':') *>
     let (name, t1) = T.break (=='!') (T.tail t0)
-    guard (not $ T.null t1)
-    let t2         = T.dropWhile (/=' ') t1
-    guard (T.length t2 >= 8)
+    in guard (not $ T.null t1) *>
+    let t2 = T.dropWhile (/=' ') t1
+    in guard (T.length t2 >= 8) *>
     let (priv, t3) = T.splitAt 8 (T.tail t2)
-    guard (priv == "PRIVMSG ")
+    in guard (priv == "PRIVMSG ") *>
     let (chan, t4) = T.break (==' ') t3
-    let t5         = T.drop 2 t4
+        t5         = T.drop 2 t4
         msg        = T.takeWhile (/='\r') t5
-    return (PrivMsg name msg, chan)
+    in pure (chan, PrivMsg name msg)
 
 data Bot = Bot
          { botName     :: Text
