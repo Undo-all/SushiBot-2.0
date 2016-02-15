@@ -162,6 +162,9 @@ makeBot name chans comms patterns host port = do
     mapM_ (joinChan bot) chans 
     return bot
 
+tell :: Text -> Text -> Text
+tell name = T.append (T.append name " wanted me to tell you: ")
+
 mainLoop :: MVar () -> Handle -> IORef (Map Text (ThreadId, InChan PrivMsg)) -> IORef (Map (Text, Text) Text) -> IO ()
 mainLoop wait h ref1 ref2 = forever $ do
     chans <- readIORef ref1
@@ -179,7 +182,7 @@ mainLoop wait h ref1 ref2 = forever $ do
                 Nothing          -> return ()
         Just (Join name chan) ->
             case M.lookup (name, chan) tells of
-                Just msg -> do privmsg' h chan msg
+                Just msg -> do privmsg' h chan (tell msg)
                 Nothing  -> return ()
         Nothing           -> return ()
 
@@ -207,7 +210,7 @@ handleChan bot outchan chan = forever $ do
             if n 
               then atomicModifyIORef' (botTells bot) 
                                       (\x -> (M.insert (to, chan) msg x, ()))
-              else privmsg' (botHandle bot) to msg
+              else privmsg' (botHandle bot) to (tell msg)
         Call usr comm args -> call bot usr chan comm args
         PrivMsg usr xs     -> runReaderT (mapM_ ($ xs) (botPatterns bot))
                                          (RequestInfo chan usr (botHandle bot))
