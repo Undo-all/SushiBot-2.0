@@ -4,10 +4,12 @@ module Bot
 ( Bot(..)
 , Command(..)
 , Pattern(..)
+, Special(..)
 , RequestInfo(..)
 , makeBot
 , say
 , privmsg
+, privmsg'
 , act
 , privact
 ) where
@@ -111,6 +113,7 @@ data Command = Command
              }
 
 type Pattern = Text -> ReaderT RequestInfo IO ()
+type Special = Handle -> Text -> IO ()
 
 privmsg' :: Handle -> Text -> Text -> IO ()
 privmsg' h chan xs = T.hPutStrLn h $ T.concat ["PRIVMSG ", chan, " :", xs]
@@ -133,13 +136,13 @@ act xs = do
     chan <- asks reqChan
     privact chan xs
 
-makeBot :: Text -> [Text] -> Map Text Command -> [Pattern] -> HostName -> Int -> IO Bot
-makeBot name chans comms patterns host port = do
+makeBot :: Text -> [Text] -> Map Text Command -> [Pattern] -> [Special] -> HostName -> Int -> IO Bot
+makeBot name chans comms patterns specials host port = do
     h    <- connectTo host (PortNumber $ fromIntegral port)
     hSetBuffering h LineBuffering
     ref <- newIORef (M.fromList [])
     wait <- newEmptyMVar
-    n    <- forkIO $ mainLoop wait h ref
+    n    <- forkIO $ mainLoop wait h specials ref 
     T.hPutStrLn h $ T.concat ["USER ", name, " ", name, " ", name, " :", name]
     T.hPutStrLn h $ T.concat ["NICK ", name]
     let bot = Bot name h ref n comms patterns 
@@ -147,10 +150,11 @@ makeBot name chans comms patterns host port = do
     mapM_ (joinChan bot) chans 
     return bot
 
-mainLoop :: MVar () -> Handle -> IORef (Map Text (ThreadId, InChan PrivMsg)) -> IO ()
-mainLoop wait h ref = forever $ do
+mainLoop :: MVar () -> Handle -> [Special] -> IORef (Map Text (ThreadId, InChan PrivMsg)) -> IO ()
+mainLoop wait h specials ref = forever $ do
     chans <- readIORef ref
     xs    <- T.hGetLine h
+    mapM_ (\s -> s h xs) specials
     case parseMsg xs of
         Just (Ping xs)     -> do
             T.hPutStrLn h $ T.concat ["PONG :", xs]

@@ -14,6 +14,7 @@ import Text.HTML.Scalpel
 import Control.Concurrent
 import Control.Monad.Reader
 import Data.Map.Strict (Map)
+import Database.SQLite.Simple
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Map.Strict as M
@@ -25,6 +26,47 @@ listItems (x:xs) = T.concat [x, ", ", listItems xs]
 
 choice :: [a] -> IO a
 choice xs = (xs !!) <$> randomRIO (0, length xs - 1)
+
+specialJoin :: Special
+specialJoin h xs = do
+    case parseJoin xs of
+        Just name -> do
+            msg <- getTold name
+            maybe (return ()) (privmsg' h name) msg
+        Nothing   -> return ()
+  where parseJoin t0 =
+            guard (T.head t0 == ':') *>
+            let (name, t1) = T.break (=='!') (T.tail t0)
+            in guard (not $ T.null t1) *>
+            let t2 = T.dropWhile (/=' ') t1
+            in guard (T.length t2 >= 5) *>
+            let xs = T.take 5 (T.tail t2)
+            in guard (xs == "JOIN ") *>
+            pure name
+        getTold name = do
+            conn              <- open "users.db"
+            [Only userExists] <- query conn queryExists (Only name)
+            if userExists
+              then do
+                  [Only hasTold] <- query conn queryHasTold (Only name)
+                  if hasTold
+                    then do 
+                        [(from, msg)] <- query conn queryTold (Only name)
+                        execute conn queryRemove (Only name)
+                        return . Just $ T.concat
+                            [ from
+                            , " wanted me to tell you: "
+                            , msg
+                            ]
+                    else return Nothing
+              else return Nothing
+        queryExists  = "SELECT (count(*) > 0) FROM users WHERE user_name = ?"
+        queryHasTold = "SELECT user_has_told FROM users WHERE user_name = ?"
+        queryTold    = "SELECT user_told_from, user_told_msg FROM users \
+                       \WHERE user_name = ?"
+        queryRemove  = "UPDATE users SET user_has_told = 0,\
+                       \user_told_from = NULL, user_told_msg = NULL \
+                       \WHERE user_name = ?"
 
 commandInfo :: Command
 commandInfo =
@@ -304,6 +346,29 @@ commandTime =
         (0, Just 0)
         (\_ -> liftIO (readProcess "date" [] []) >>= say . T.pack)
 
+commandTell :: Command
+commandTell =
+    Command
+        "Queue a message for a user; it will be sent the next time they join."
+        "!tell [user] [message]"
+        (2, Nothing)
+        tell
+  where tell (name:msg) = do
+            user <- asks reqUser
+            liftIO (queueMessage user name (T.unwords msg))
+            say "Messaged queued."
+        queueMessage from to msg = do
+            conn <- open "users.db"
+            [Only userExists] <- query conn queryExists (Only to)
+            if userExists
+              then execute conn queryUpdate (from, msg, to)
+              else execute conn queryInsert (to, True, from, msg)
+        queryExists = "SELECT (count(*) > 0) FROM users WHERE user_name = ?"
+        queryUpdate = "UPDATE users SET user_has_told = 1,\
+                      \user_told_from = ?, user_told_msg = ? \
+                      \WHERE user_name = ?"
+        queryInsert = "INSERT INTO users VALUES(?, ?, ?, ?)"
+
 -- This blocks the main thread forever. I'm sure there's a cleaner way to
 -- do this, but this is what I'm doin'.
 waitForever :: IO ()
@@ -331,10 +396,18 @@ commands = M.fromList [ ("info", commandInfo)
                       , ("gelbooru", commandGelbooru)
                       , ("syntax", commandGetSyntax)
                       , ("time", commandTime)
+                      , ("tell", commandTell)
                       ]
 
 main :: IO ()
-main = do makeBot "SushiBot" channels commands [] 
+main = do conn <- open "users.db"
+          execute_ conn "CREATE TABLE IF NOT EXISTS users (\
+                        \    user_name TEXT PRIMARY KEY NOT NULL,\
+                        \    user_has_told BOOL NOT NULL,\
+                        \    user_told_from TEXT,\
+                        \    user_told_msg TEXT\
+                        \)"
+          makeBot "SushiBot" channels commands [] [specialJoin]
                   "irc.sushigirl.tokyo" 6667
           waitForever
 
