@@ -137,13 +137,12 @@ makeBot :: Text -> [Text] -> Map Text Command -> [Pattern] -> HostName -> Int ->
 makeBot name chans comms patterns host port = do
     h    <- connectTo host (PortNumber $ fromIntegral port)
     hSetBuffering h LineBuffering
-    ref1 <- newIORef (M.fromList [])
-    ref2 <- newIORef (M.fromList [])
+    ref <- newIORef (M.fromList [])
     wait <- newEmptyMVar
-    n    <- forkIO $ mainLoop wait h ref1 ref2
+    n    <- forkIO $ mainLoop wait h ref
     T.hPutStrLn h $ T.concat ["USER ", name, " ", name, " ", name, " :", name]
     T.hPutStrLn h $ T.concat ["NICK ", name]
-    let bot = Bot name h ref1 n comms patterns ref2
+    let bot = Bot name h ref n comms patterns 
     readMVar wait
     mapM_ (joinChan bot) chans 
     return bot
@@ -164,7 +163,7 @@ mainLoop wait h ref = forever $ do
         Nothing           -> return ()
 
 joinChan :: Bot -> Text -> IO ()
-joinChan bot@(Bot _ h chans _ _ _ _) chan = do
+joinChan bot@(Bot _ h chans _ _ _) chan = do
     T.hPutStrLn h $ T.concat ["JOIN ", chan]
     (inchan, outchan) <- newChan
     n                 <- forkIO $ handleChan bot outchan chan 
