@@ -8,15 +8,15 @@ import Data.Time
 import Data.Maybe
 import Control.Monad
 import System.Random
-import Data.Map (Map)
 import System.Process
 import Data.Text (Text)
 import Text.HTML.Scalpel
 import Control.Concurrent
 import Control.Monad.Reader
-import qualified Data.Map as M
+import Data.Map.Strict (Map)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Map.Strict as M
 
 listItems :: [Text] -> Text
 listItems [x]    = x
@@ -310,7 +310,7 @@ waitForever :: IO ()
 waitForever = forever $ threadDelay maxBound
 
 channels :: [Text]
-channels = ["#lounge", "#comfy", "#secret", "#pepe"]
+channels = ["#lounge", "#comfy", "#secret", "#pepe", "#anime"]
 
 commands :: Map Text Command
 commands = M.fromList [ ("info", commandInfo)
