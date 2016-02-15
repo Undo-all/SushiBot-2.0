@@ -48,7 +48,7 @@ parsePM :: Text -> Maybe Msg
 parsePM xs = do
     pm <- do
         (PrivMsg user xs, chan) <- parsePrivMsg xs
-        if T.head xs == '!'
+        if T.head xs == '!' && T.length xs >= 2 && xs `T.index` 2 /= '!'
           then let (comm:args) = getArgs [] [] False (tail . T.unpack $ xs)
                in return (Call user comm args, chan)
           else return (PrivMsg user xs, chan)
@@ -134,6 +134,7 @@ act xs = do
 makeBot :: Text -> [Text] -> Map Text Command -> [Pattern] -> HostName -> Int -> IO Bot
 makeBot name chans comms patterns host port = do
     h    <- connectTo host (PortNumber $ fromIntegral port)
+    hSetBuffering h LineBuffering
     ref  <- newIORef (M.fromList [])
     wait <- newEmptyMVar
     n    <- forkIO $ mainLoop wait h ref
