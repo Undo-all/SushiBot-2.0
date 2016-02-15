@@ -97,8 +97,8 @@ parseJoin t0 =
     let t2 = T.dropWhile (/=' ') t1
     in guard (T.length t2 >= 5) *>
     let (xs, t3) = T.splitAt 5 (T.tail t2)
-    in guard (xs == "JOIN") *>
-    let chan = T.takeWhile (/='\r') $ T.drop 2 t3
+    in guard (xs == "JOIN ") *>
+    let chan = T.takeWhile (/='\r') $ T.tail t3
     in pure (Join name chan)
 
 data Bot = Bot
@@ -108,7 +108,7 @@ data Bot = Bot
          , botThread   :: ThreadId
          , botCommands :: Map Text Command
          , botPatterns :: [Pattern]
-         , botTells    :: IORef (Map (Text, Text) Text)
+         , botTells    :: IORef (Map Text (Text, Text))
          } 
 
 data RequestInfo = RequestInfo
@@ -165,25 +165,26 @@ makeBot name chans comms patterns host port = do
 tell :: Text -> Text -> Text
 tell name = T.append (T.append name " wanted me to tell you: ")
 
-mainLoop :: MVar () -> Handle -> IORef (Map Text (ThreadId, InChan PrivMsg)) -> IORef (Map (Text, Text) Text) -> IO ()
+mainLoop :: MVar () -> Handle -> IORef (Map Text (ThreadId, InChan PrivMsg)) -> IORef (Map Text (Text, Text)) -> IO ()
 mainLoop wait h ref1 ref2 = forever $ do
     chans <- readIORef ref1
     tells <- readIORef ref2
     xs    <- T.hGetLine h
-    T.putStrLn xs
     case parseMsg xs of
-        Just (Ping xs)    -> do
+        Just (Ping xs)     -> do
             T.hPutStrLn h $ T.concat ["PONG :", xs]
             tryPutMVar wait ()
             return ()
-        Just (PM chan pm) ->
+        Just (PM chan pm)  ->
             case M.lookup chan chans of
                 Just (_, inchan) -> writeChan inchan pm 
                 Nothing          -> return ()
         Just (Join name chan) ->
-            case M.lookup (name, chan) tells of
-                Just msg -> do privmsg' h chan (tell msg)
-                Nothing  -> return ()
+            case M.lookup name tells of
+                Just (from, msg) -> do
+                    atomicModifyIORef' ref2 (\x -> (M.delete name x, ())) 
+                    privmsg' h name (tell from msg)
+                Nothing          -> return ()
         Nothing           -> return ()
 
 joinChan :: Bot -> Text -> IO ()
@@ -193,24 +194,15 @@ joinChan bot@(Bot _ h chans _ _ _ _) chan = do
     n                 <- forkIO $ handleChan bot outchan chan 
     atomicModifyIORef' chans (\m -> (M.insert chan (n, inchan) m, ()))
 
-userInChannel :: Handle -> Text -> Text -> IO Bool
-userInChannel h chan name = do
-    T.hPutStrLn h $ T.concat ["NAMES ", chan]
-    names <- T.words <$> T.hGetLine h
-    return . isJust $ find (\x -> x == name || x == T.tail name) names
-
 handleChan :: Bot -> OutChan PrivMsg -> Text -> IO ()
 handleChan bot outchan chan = forever $ do
     msg <- readChan outchan
     case msg of
-        Call user "tell" xs -> do
+        Call from "tell" xs -> do
             let to  = head xs
                 msg = T.unwords (tail xs)
-            n <- userInChannel (botHandle bot) chan to
-            if n 
-              then atomicModifyIORef' (botTells bot) 
-                                      (\x -> (M.insert (to, chan) msg x, ()))
-              else privmsg' (botHandle bot) to (tell msg)
+            atomicModifyIORef' (botTells bot) 
+                               (\x -> (M.insert to (from, msg) x, ()))
         Call usr comm args -> call bot usr chan comm args
         PrivMsg usr xs     -> runReaderT (mapM_ ($ xs) (botPatterns bot))
                                          (RequestInfo chan usr (botHandle bot))
