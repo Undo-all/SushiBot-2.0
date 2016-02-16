@@ -20,12 +20,15 @@ import Data.List
 import System.IO
 import Data.IORef
 import Data.Maybe
+import Data.Monoid
 import Control.Monad
 import Data.Text (Text)
 import Control.Applicative
 import Control.Monad.Reader
 import Data.Map.Strict (Map)
+import Data.Text.Lazy.Builder
 import qualified Data.Text as T
+import Data.Text.Lazy (toStrict)
 import qualified Data.Text.IO as T
 import Control.Concurrent.Chan.Unagi
 import qualified Data.Map.Strict as M
@@ -41,39 +44,46 @@ data PrivMsg = PrivMsg Text Text
 
 parseMsg :: Text -> Maybe Msg
 parseMsg xs
-    | T.length xs < 6       = Nothing
     | T.take 4 xs == "PING" = Just $ Ping (T.drop 6 xs)
     | otherwise             = parsePM xs 
 
 parsePM :: Text -> Maybe Msg
 parsePM xs = uncurry PM . fmap parseCall <$> parsePrivMsg xs
   where parseCall (PrivMsg user xs)
-            | isCommand xs = let (comm:args) = getArgs (T.tail xs)
+            | isCommand xs = let (comm:args) = T.words (T.tail xs)
                              in Call user comm args
             | otherwise    = PrivMsg user xs
         isCommand xs =
             T.head xs == '!' && T.length xs >= 2 && xs `T.index` 2 /= '!'
 
+{-# INLINE getArgs #-}
 getArgs :: Text -> [Text]
-getArgs = getArgs' [] [] False . T.unpack
+getArgs = getArgs' mempty [] False
 
-getArgs' :: String -> [Text] -> Bool -> String -> [Text]
-getArgs' tmp res _ []
-    | null tmp  = reverse res
-    | otherwise = reverse (T.pack (reverse tmp):res)
-getArgs' tmp res True ('\\':'"':xs) = getArgs' ('"':tmp) res True xs
-getArgs' tmp res True ('"':xs)      =
-    getArgs' [] (T.pack (reverse tmp):res) False xs
-getArgs' tmp res True (c:xs)        = getArgs' (c:tmp) res True xs
-getArgs' tmp res False ('"':xs)
-    | null tmp  = getArgs' [] res True xs
-    | otherwise = getArgs' [] (T.pack (reverse tmp):res) True xs
-getArgs' tmp res False (c:xs) 
-    | isSpace c =
-      if null tmp
-        then getArgs' [] res False xs 
-        else getArgs' [] (T.pack (reverse tmp):res) False xs
-    | otherwise = getArgs' (c:tmp) res False xs
+{-# INLINE append #-}
+append :: Builder -> [Text] -> [Text]
+append tmp res = let xs = toStrict (toLazyText tmp)
+                 in if T.null xs then res else (xs:res)
+
+getArgs' :: Builder -> [Text] -> Bool -> Text -> [Text]
+getArgs' tmp res _ txt
+    | T.null txt = reverse $ append tmp res
+
+getArgs' tmp res True txt
+    | T.head txt == '\\' =
+      if T.length txt >= 2 && T.head (T.tail txt) == '"'
+        then getArgs' (tmp <> singleton '"') res True (T.tail txt)
+        else getArgs' (tmp <> singleton '\\') res True (T.tail txt)
+    | T.head txt == '"' = getArgs' mempty (append tmp res) False (T.tail txt)
+    | otherwise         =
+      getArgs' (tmp <> singleton (T.head txt)) res True (T.tail txt)
+
+getArgs' tmp res False txt
+    | T.head txt == '"'    = getArgs' mempty (append tmp res) True (T.tail txt)
+    | isSpace (T.head txt) =
+      getArgs' mempty (append tmp res) False (T.tail txt)
+    | otherwise            =
+      getArgs' (tmp <> singleton (T.head txt)) res False (T.tail txt)
 
 -- Pls let ApplicativeDo come out soon
 parsePrivMsg :: Text -> Maybe (Text, PrivMsg)
@@ -129,7 +139,9 @@ say xs = do
     privmsg chan xs
 
 privact :: Text -> Text -> ReaderT RequestInfo IO ()
-privact chan xs = privmsg chan $ T.concat ["\0001ACTION ", xs, "\0001"]
+privact chan xs = do
+    h <- asks reqHandle
+    liftIO $ privmsg' h chan $ T.concat ["\0001ACTION ", xs, "\0001"]
 
 act :: Text -> ReaderT RequestInfo IO ()
 act xs = do

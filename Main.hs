@@ -350,7 +350,7 @@ commandTell :: Command
 commandTell =
     Command
         "Queue a message for a user; it will be sent the next time they join."
-        "!tell [user] [message]"
+        "[user] [message]"
         (2, Nothing)
         tell
   where tell (name:msg) = do
@@ -375,7 +375,7 @@ waitForever :: IO ()
 waitForever = forever $ threadDelay maxBound
 
 channels :: [Text]
-channels = ["#lounge", "#comfy", "#secret", "#pepe", "#anime"]
+channels = ["#lounge", "#comfy", "#secret", "#pepe", "#anime", "#bottesting"]
 
 commands :: Map Text Command
 commands = M.fromList [ ("info", commandInfo)
