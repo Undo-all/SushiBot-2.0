@@ -28,7 +28,7 @@ choice :: [a] -> IO a
 choice xs = (xs !!) <$> randomRIO (0, length xs - 1)
 
 specialJoin :: Special
-specialJoin h xs = do
+specialJoin h xs = 
     case parseJoin xs of
         Just name -> do
             msg <- getTold name
@@ -130,7 +130,7 @@ commandSlap =
         "Slap someone (or multiple people) with a large trout"
         "[user | users]"
         (1, Nothing)
-        (\xs -> act $ slap (listItems xs))
+        (act . slap (listItems xs))
   where slap xs = T.concat ["slaps ", xs, " with a large trout."]
 
 commandMix :: Command

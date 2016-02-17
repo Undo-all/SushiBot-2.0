@@ -63,7 +63,7 @@ getArgs = getArgs' mempty [] False
 {-# INLINE append #-}
 append :: Builder -> [Text] -> [Text]
 append tmp res = let xs = toStrict (toLazyText tmp)
-                 in if T.null xs then res else (xs:res)
+                 in if T.null xs then res else xs:res
 
 getArgs' :: Builder -> [Text] -> Bool -> Text -> [Text]
 getArgs' tmp res _ txt
@@ -152,7 +152,7 @@ makeBot :: Text -> [Text] -> Map Text Command -> [Pattern] -> [Special] -> HostN
 makeBot name chans comms patterns specials host port = do
     h    <- connectTo host (PortNumber $ fromIntegral port)
     hSetBuffering h LineBuffering
-    ref <- newIORef (M.fromList [])
+    ref  <- newIORef (M.fromList [])
     wait <- newEmptyMVar
     n    <- forkIO $ mainLoop wait h specials ref 
     T.hPutStrLn h $ T.concat ["USER ", name, " ", name, " ", name, " :", name]
@@ -198,7 +198,7 @@ call bot usr chan comm args =
     case M.lookup comm (botCommands bot) of
         Nothing                      ->
             privmsg' (botHandle bot) chan $ T.append "Command not found: " comm
-        Just (Command _ _ numArgs f) -> do
+        Just (Command _ _ numArgs f) -> 
             case checkNumArgs numArgs (length args) of
               Nothing  -> 
                   runReaderT (f args) (RequestInfo chan usr (botHandle bot))
