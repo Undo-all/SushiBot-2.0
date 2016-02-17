@@ -50,7 +50,7 @@ parseMsg xs
 parsePM :: Text -> Maybe Msg
 parsePM xs = uncurry PM . fmap parseCall <$> parsePrivMsg xs
   where parseCall (PrivMsg user xs)
-            | isCommand xs = let (comm:args) = T.words (T.tail xs)
+            | isCommand xs = let (comm:args) = getArgs (T.tail xs)
                              in Call user comm args
             | otherwise    = PrivMsg user xs
         isCommand xs =
