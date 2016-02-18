@@ -2,6 +2,8 @@
 
 module Main (main) where
 
+import System.Remote.Monitoring
+
 import Bot
 import Data.Char
 import Data.Time
@@ -130,7 +132,7 @@ commandSlap =
         "Slap someone (or multiple people) with a large trout"
         "[user | users]"
         (1, Nothing)
-        (act . slap (listItems xs))
+        (act . slap . listItems)
   where slap xs = T.concat ["slaps ", xs, " with a large trout."]
 
 commandMix :: Command
@@ -400,7 +402,8 @@ commands = M.fromList [ ("info", commandInfo)
                       ]
 
 main :: IO ()
-main = do conn <- open "users.db"
+main = do ekg <- forkServer "localhost" 8000
+          conn <- open "users.db"
           execute_ conn "CREATE TABLE IF NOT EXISTS users (\
                         \    user_name TEXT PRIMARY KEY NOT NULL,\
                         \    user_has_told BOOL NOT NULL,\

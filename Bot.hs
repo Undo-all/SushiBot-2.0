@@ -62,7 +62,7 @@ getArgs = getArgs' mempty [] False
 
 {-# INLINE append #-}
 append :: Builder -> [Text] -> [Text]
-append tmp res = let xs = toStrict (toLazyText tmp)
+append tmp res = let xs = toStrict (toLazyText (flush <> tmp))
                  in if T.null xs then res else xs:res
 
 getArgs' :: Builder -> [Text] -> Bool -> Text -> [Text]
