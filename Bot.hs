@@ -166,7 +166,6 @@ mainLoop :: MVar () -> Handle -> [Special] -> IORef (Map Text (ThreadId, InChan 
 mainLoop wait h specials ref = forever $ do
     chans <- readIORef ref
     xs    <- T.hGetLine h
-    putStrLn (show $ parseMsg xs)
     mapM_ (\s -> s h xs) specials
     case parseMsg xs of
         Just (Ping xs)     -> do
