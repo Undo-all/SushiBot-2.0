@@ -98,7 +98,7 @@ parsePrivMsg t0 =
     let (chan, t4) = T.break (==' ') t3
         t5         = T.drop 2 t4
         msg        = T.takeWhile (/='\r') t5
-    in pure (chan, PrivMsg name msg)
+    in pure (T.toLower chan, PrivMsg name msg)
 
 data Bot = Bot
          { botName     :: Text
@@ -166,6 +166,7 @@ mainLoop :: MVar () -> Handle -> [Special] -> IORef (Map Text (ThreadId, InChan 
 mainLoop wait h specials ref = forever $ do
     chans <- readIORef ref
     xs    <- T.hGetLine h
+    putStrLn (show $ parseMsg xs)
     mapM_ (\s -> s h xs) specials
     case parseMsg xs of
         Just (Ping xs)     -> do
