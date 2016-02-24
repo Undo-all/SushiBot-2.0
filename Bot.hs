@@ -22,16 +22,17 @@ import Data.IORef
 import Data.Maybe
 import Data.Monoid
 import Control.Monad
+import Data.Map (Map)
 import Data.Text (Text)
 import Control.Applicative
 import Control.Monad.Reader
-import Data.Map.Strict (Map)
+import Database.SQLite.Simple
 import Data.Text.Lazy.Builder
+import qualified Data.Map as M
 import qualified Data.Text as T
 import Data.Text.Lazy (toStrict)
 import qualified Data.Text.IO as T
 import Control.Concurrent.Chan.Unagi
-import qualified Data.Map.Strict as M
 import Control.Concurrent hiding (newChan, readChan, writeChan)
 
 data Msg = Ping Text
@@ -56,14 +57,14 @@ parsePM xs = uncurry PM . fmap parseCall <$> parsePrivMsg xs
         isCommand xs =
             T.head xs == '!' && T.length xs >= 2 && xs `T.index` 2 /= '!'
 
-{-# INLINE getArgs #-}
 getArgs :: Text -> [Text]
 getArgs = getArgs' mempty [] False
+{-# INLINE getArgs #-}
 
-{-# INLINE append #-}
 append :: Builder -> [Text] -> [Text]
 append tmp res = let xs = toStrict (toLazyText (flush <> tmp))
                  in if T.null xs then res else xs:res
+{-# INLINE append #-}
 
 getArgs' :: Builder -> [Text] -> Bool -> Text -> [Text]
 getArgs' tmp res _ txt
@@ -104,15 +105,16 @@ data Bot = Bot
          { botName     :: Text
          , botHandle   :: Handle
          , botChannels :: IORef (Map Text (ThreadId, InChan PrivMsg))
-         , botThread   :: ThreadId
          , botCommands :: Map Text Command
          , botPatterns :: [Pattern]
+         , botDbConn   :: Connection
          } 
 
 data RequestInfo = RequestInfo
                  { reqChan   :: Text
                  , reqUser   :: Text
                  , reqHandle :: Handle
+                 , reqDbConn :: Connection
                  }
 
 data Command = Command
@@ -123,7 +125,7 @@ data Command = Command
              }
 
 type Pattern = Text -> ReaderT RequestInfo IO ()
-type Special = Handle -> Text -> IO ()
+type Special = Bot -> Text -> IO ()
 
 privmsg' :: Handle -> Text -> Text -> IO ()
 privmsg' h chan xs = T.hPutStrLn h $ T.concat ["PRIVMSG ", chan, " :", xs]
@@ -148,61 +150,64 @@ act xs = do
     chan <- asks reqChan
     privact chan xs
 
-makeBot :: Text -> [Text] -> Map Text Command -> [Pattern] -> [Special] -> HostName -> Int -> IO Bot
-makeBot name chans comms patterns specials host port = do
+makeBot :: Text -> [Text] -> Map Text Command -> [Pattern] -> [Special] -> HostName -> Int -> String -> IO Bot
+makeBot name chans comms patterns specials host port db = do
     h    <- connectTo host (PortNumber $ fromIntegral port)
     hSetBuffering h LineBuffering
     ref  <- newIORef (M.fromList [])
     wait <- newEmptyMVar
-    n    <- forkIO $ mainLoop wait h specials ref 
+    conn <- open db
+    let bot = Bot name h ref comms patterns conn
+    forkIO $ mainLoop wait specials bot
     T.hPutStrLn h $ T.concat ["USER ", name, " ", name, " ", name, " :", name]
     T.hPutStrLn h $ T.concat ["NICK ", name]
-    let bot = Bot name h ref n comms patterns 
     readMVar wait
     mapM_ (joinChan bot) chans 
     return bot
 
-mainLoop :: MVar () -> Handle -> [Special] -> IORef (Map Text (ThreadId, InChan PrivMsg)) -> IO ()
-mainLoop wait h specials ref = forever $ do
+mainLoop :: MVar () -> [Special] -> Bot -> IO ()
+mainLoop wait specials bot@(Bot { botHandle = h, botChannels = ref }) = forever $ do
     chans <- readIORef ref
     xs    <- T.hGetLine h
-    mapM_ (\s -> s h xs) specials
+    mapM_ (\s -> s bot xs) specials
     case parseMsg xs of
-        Just (Ping xs)     -> do
+        Just (Ping xs) -> do
             T.hPutStrLn h $ T.concat ["PONG :", xs]
             tryPutMVar wait ()
             return ()
-        Just (PM chan pm)  ->
+
+        Just (PM chan pm) ->
             case M.lookup chan chans of
                 Just (_, inchan) -> writeChan inchan pm 
                 Nothing          -> return ()
-        Nothing           -> return ()
+
+        Nothing -> return ()
 
 joinChan :: Bot -> Text -> IO ()
-joinChan bot@(Bot _ h chans _ _ _) chan = do
+joinChan bot@(Bot { botHandle = h, botChannels = chans }) chan = do
     T.hPutStrLn h $ T.concat ["JOIN ", chan]
     (inchan, outchan) <- newChan
     n                 <- forkIO $ handleChan bot outchan chan 
     atomicModifyIORef' chans (\m -> (M.insert chan (n, inchan) m, ()))
 
 handleChan :: Bot -> OutChan PrivMsg -> Text -> IO ()
-handleChan bot outchan chan = forever $ do
+handleChan bot@(Bot { botHandle = h, botDbConn = conn }) outchan chan = forever $ do
     msg <- readChan outchan
     case msg of
         Call usr comm args -> call bot usr chan comm args
         PrivMsg usr xs     -> runReaderT (mapM_ ($ xs) (botPatterns bot))
-                                         (RequestInfo chan usr (botHandle bot))
+                                         (RequestInfo chan usr h conn)
 
 call :: Bot -> Text -> Text -> Text -> [Text] -> IO ()
-call bot usr chan comm args =
+call bot@(Bot { botHandle = h, botDbConn = conn }) usr chan comm args =
     case M.lookup comm (botCommands bot) of
         Nothing                      ->
-            privmsg' (botHandle bot) chan $ T.append "Command not found: " comm
+            privmsg' h chan $ T.append "Command not found: " comm
         Just (Command _ _ numArgs f) -> 
             case checkNumArgs numArgs (length args) of
               Nothing  -> 
-                  runReaderT (f args) (RequestInfo chan usr (botHandle bot))
-              Just err -> privmsg' (botHandle bot) chan $  
+                  runReaderT (f args) (RequestInfo chan usr h conn)
+              Just err -> privmsg' h chan $  
                   T.concat [ "Incorrect number of arguments to command "
                            , comm, " (expected ", err, ", got "
                            , T.pack . show . length $ args, ")"

@@ -2,24 +2,22 @@
 
 module Main (main) where
 
-import System.Remote.Monitoring
-
 import Bot
 import Data.Char
 import Data.Time
 import Data.Maybe
 import Control.Monad
 import System.Random
+import Data.Map (Map)
 import System.Process
 import Data.Text (Text)
 import Text.HTML.Scalpel
 import Control.Concurrent
 import Control.Monad.Reader
-import Data.Map.Strict (Map)
 import Database.SQLite.Simple
+import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import qualified Data.Map.Strict as M
 
 listItems :: [Text] -> Text
 listItems [x]    = x
@@ -30,7 +28,7 @@ choice :: [a] -> IO a
 choice xs = (xs !!) <$> randomRIO (0, length xs - 1)
 
 specialJoin :: Special
-specialJoin h xs = 
+specialJoin Bot { botHandle = h, botDbConn = conn } xs = 
     case parseJoin xs of
         Just name -> do
             msg <- getTold name
@@ -46,7 +44,6 @@ specialJoin h xs =
             in guard (xs == "JOIN ") *>
             pure name
         getTold name = do
-            conn              <- open "users.db"
             [Only userExists] <- query conn queryExists (Only name)
             if userExists
               then do
@@ -87,18 +84,22 @@ commandHelp =
         "(command)"
         (0, Just 1)
         help
-  where help [c] = case M.lookup c commands of
-                       Just comm -> do say (commandDesc comm)
-                                       say $ T.concat [ "Syntax: !", c, " "
-                                                      , commandSyntax comm
-                                                      ]
-                       Nothing   -> say $ "Command not found: " `T.append` c
+  where help [c] =
+            case M.lookup c commands of
+                Just comm -> do
+                    say (commandDesc comm)
+                    say $ T.concat [ "Syntax: !", c, " ", commandSyntax comm ]
+                Nothing -> say $ "Command not found: " `T.append` c
         help []  = do usr <- asks reqUser
+                      h   <- asks reqHandle
                       say "List of commands sent in a PM."
-                      mapM_ (privmsg usr) xs
-        xs      = zipWith (\x y -> T.concat [x, " - ", y]) 
-                          (M.keys commands)
-                          (map commandDesc (M.elems commands))
+                      let privDelay x = do privmsg' h usr x
+                                           threadDelay 1000
+                      liftIO . forkIO $ mapM_ (privDelay) xs
+                      return ()
+        xs       = zipWith (\x y -> T.concat [x, " - ", y]) 
+                           (M.keys commands)
+                           (map commandDesc (M.elems commands))
 
 commandSay :: Command
 commandSay =
@@ -357,10 +358,10 @@ commandTell =
         tell
   where tell (name:msg) = do
             user <- asks reqUser
-            liftIO (queueMessage user name (T.unwords msg))
+            conn <- asks reqDbConn
+            liftIO (queueMessage conn user name (T.unwords msg))
             say "Messaged queued."
-        queueMessage from to msg = do
-            conn <- open "users.db"
+        queueMessage conn from to msg = do
             [Only userExists] <- query conn queryExists (Only to)
             if userExists
               then execute conn queryUpdate (from, msg, to)
@@ -402,8 +403,7 @@ commands = M.fromList [ ("info", commandInfo)
                       ]
 
 main :: IO ()
-main = do ekg <- forkServer "localhost" 8000
-          conn <- open "users.db"
+main = do conn <- open "botdata.db"
           execute_ conn "CREATE TABLE IF NOT EXISTS users (\
                         \    user_name TEXT PRIMARY KEY NOT NULL,\
                         \    user_has_told BOOL NOT NULL,\
@@ -411,6 +411,6 @@ main = do ekg <- forkServer "localhost" 8000
                         \    user_told_msg TEXT\
                         \)"
           makeBot "SushiBot" channels commands [] [specialJoin]
-                  "irc.sushigirl.tokyo" 6667
+                  "irc.sushigirl.tokyo" 6667 "botdata.db"
           waitForever
 
