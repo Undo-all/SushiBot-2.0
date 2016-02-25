@@ -93,10 +93,7 @@ commandHelp =
         help []  = do usr <- asks reqUser
                       h   <- asks reqHandle
                       say "List of commands sent in a PM."
-                      let privDelay x = do privmsg' h usr x
-                                           threadDelay 1000
-                      liftIO . forkIO $ mapM_ (privDelay) xs
-                      return ()
+                      privmsgs usr xs
         xs       = zipWith (\x y -> T.concat [x, " - ", y]) 
                            (M.keys commands)
                            (map commandDesc (M.elems commands))
@@ -182,7 +179,7 @@ commandFortune =
         "A direct call to the unix command 'fortune'."
         ""
         (0, Just 0)
-        (\_ -> liftIO readFortune >>= mapM_ (say . T.pack) . lines . init)
+        (\_ -> liftIO readFortune >>= sayList . T.lines . T.pack . init)
   where readFortune = readProcess "fortune" [] []
 
 commandLewd :: Command
