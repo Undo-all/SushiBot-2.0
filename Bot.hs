@@ -126,7 +126,7 @@ data Command = Command
              }
 
 instance NFData Command where
-    rnf (Command d s a f) = rnf d `seq` rnf s `seq` rnf a `seq` rnf f
+    rnf (Command d s a f) = rnf d `seq` rnf s `seq` rnf a `seq` rnf f `seq` ()
 
 type Pattern = Text -> ReaderT RequestInfo IO ()
 type Special = Bot -> Text -> IO ()
