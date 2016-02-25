@@ -8,16 +8,17 @@ import Data.Time
 import Data.Maybe
 import Control.Monad
 import System.Random
-import Data.Map (Map)
 import System.Process
+import Control.DeepSeq
 import Data.Text (Text)
 import Text.HTML.Scalpel
 import Control.Concurrent
 import Control.Monad.Reader
+import Data.Map.Strict (Map)
 import Database.SQLite.Simple
-import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Map.Strict as M
 
 listItems :: [Text] -> Text
 listItems [x]    = x

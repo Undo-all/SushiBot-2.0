@@ -22,17 +22,18 @@ import Data.IORef
 import Data.Maybe
 import Data.Monoid
 import Control.Monad
-import Data.Map (Map)
+import Control.DeepSeq
 import Data.Text (Text)
 import Control.Applicative
 import Control.Monad.Reader
+import Data.Map.Strict (Map)
 import Database.SQLite.Simple
 import Data.Text.Lazy.Builder
-import qualified Data.Map as M
 import qualified Data.Text as T
 import Data.Text.Lazy (toStrict)
 import qualified Data.Text.IO as T
 import Control.Concurrent.Chan.Unagi
+import qualified Data.Map.Strict as M
 import Control.Concurrent hiding (newChan, readChan, writeChan)
 
 data Msg = Ping Text
@@ -124,6 +125,9 @@ data Command = Command
              , commandFunc   :: [Text] -> ReaderT RequestInfo IO ()
              }
 
+instance NFData Command where
+    rnf (Command d s a f) = rnf d `seq` rnf s `seq` rnf a `seq` rnf f
+
 type Pattern = Text -> ReaderT RequestInfo IO ()
 type Special = Bot -> Text -> IO ()
 
@@ -157,7 +161,7 @@ makeBot name chans comms patterns specials host port db = do
     ref  <- newIORef (M.fromList [])
     wait <- newEmptyMVar
     conn <- open db
-    let bot = Bot name h ref comms patterns conn
+    let bot = comms `deepseq` Bot name h ref comms patterns conn
     forkIO $ mainLoop wait specials bot
     T.hPutStrLn h $ T.concat ["USER ", name, " ", name, " ", name, " :", name]
     T.hPutStrLn h $ T.concat ["NICK ", name]
