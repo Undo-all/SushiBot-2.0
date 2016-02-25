@@ -9,7 +9,6 @@ import Data.Maybe
 import Control.Monad
 import System.Random
 import System.Process
-import Control.DeepSeq
 import Data.Text (Text)
 import Text.HTML.Scalpel
 import Control.Concurrent
