@@ -40,28 +40,38 @@ makeBot name chans comms patterns specials host port db = do
     h    <- connectTo host (PortNumber $ fromIntegral port)
     hSetBuffering h LineBuffering
     ref  <- newIORef (M.fromList [])
-    wait <- newEmptyMVar
     conn <- open db
+    wait <- newEmptyMVar
+
     let bot = comms `deepseq` Bot name h ref comms patterns conn
     forkIO $ mainLoop wait specials bot
+
     T.hPutStrLn h $ T.concat ["USER ", name, " ", name, " ", name, " :", name]
     T.hPutStrLn h $ T.concat ["NICK ", name]
+
     readMVar wait
     mapM_ (joinChan bot) chans 
     return bot
 
 mainLoop :: MVar () -> [Special] -> Bot -> IO ()
 mainLoop wait specials bot@(Bot { botHandle = h, botChannels = ref }) = forever $ do
-    chans <- readIORef ref
     xs    <- T.hGetLine h
     mapM_ (\s -> s bot xs) specials
+    
+    case parseMsg xs of
+        Just msg -> handleMsg bot msg
+        Nothing  -> return ()  
+
+handleMsg :: Bot -> Msg -> IO ()
+handleMsg msg = do
     case parseMsg xs of
         Just (Ping xs) -> do
             T.hPutStrLn h $ T.concat ["PONG :", xs]
             tryPutMVar wait ()
             return ()
 
-        Just (PM chan pm) ->
+        Just (PM chan pm) -> do
+            chans <- readIORef (botChannels bot)
             case M.lookup chan chans of
                 Just (_, inchan) -> writeChan inchan pm 
                 Nothing          -> return ()
@@ -72,7 +82,7 @@ joinChan :: Bot -> Text -> IO ()
 joinChan bot@(Bot { botHandle = h, botChannels = chans }) chan = do
     T.hPutStrLn h $ T.concat ["JOIN ", chan]
     (inchan, outchan) <- newChan
-    n                 <- forkIO $ handleChan bot outchan chan 
+    n <- forkIO $ handleChan bot outchan chan 
     atomicModifyIORef' chans (\m -> (M.insert chan (n, inchan) m, ()))
 
 handleChan :: Bot -> OutChan PrivMsg -> Text -> IO ()
@@ -86,8 +96,9 @@ handleChan bot@(Bot { botHandle = h, botDbConn = conn }) outchan chan = forever 
 call :: Bot -> Text -> Text -> Text -> [Text] -> IO ()
 call bot@(Bot { botHandle = h, botDbConn = conn }) usr chan comm args =
     case M.lookup comm (botCommands bot) of
-        Nothing                      ->
+        Nothing ->
             privmsg' h chan $ T.append "Command not found: " comm
+
         Just (Command _ _ numArgs f) -> 
             case checkNumArgs numArgs (length args) of
               Nothing  -> 
