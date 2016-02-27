@@ -59,24 +59,22 @@ mainLoop wait specials bot@(Bot { botHandle = h, botChannels = ref }) = forever 
     mapM_ (\s -> s bot xs) specials
     
     case parseMsg xs of
-        Just msg -> handleMsg bot msg
+        Just msg -> handleMsg wait bot msg
         Nothing  -> return ()  
 
-handleMsg :: Bot -> Msg -> IO ()
-handleMsg msg = do
-    case parseMsg xs of
-        Just (Ping xs) -> do
-            T.hPutStrLn h $ T.concat ["PONG :", xs]
+handleMsg :: MVar () -> Bot -> Msg -> IO ()
+handleMsg wait bot msg = do
+    case msg of
+        Ping xs -> do
+            T.hPutStrLn (botHandle bot) $ T.concat ["PONG :", xs]
             tryPutMVar wait ()
             return ()
 
-        Just (PM chan pm) -> do
+        PM chan pm -> do
             chans <- readIORef (botChannels bot)
             case M.lookup chan chans of
                 Just (_, inchan) -> writeChan inchan pm 
                 Nothing          -> return ()
-
-        Nothing -> return ()
 
 joinChan :: Bot -> Text -> IO ()
 joinChan bot@(Bot { botHandle = h, botChannels = chans }) chan = do
