@@ -15,7 +15,7 @@ privmsg' h chan xs = T.hPutStrLn h $ T.concat ["PRIVMSG ", chan, " :", xs]
 privmsgs' :: Handle -> Text -> [Text] -> IO ()
 privmsgs' h chan xs =
     let pms = map (\x -> T.concat ["PRIVMSG ", chan, " :", x, "\r"]) xs
-    in T.hPutStr h (T.concat pms) >> hFlush h
+    in T.hPutStr h (T.concat pms) *> hFlush h
 
 privmsg :: Text -> Text -> ReaderT RequestInfo IO ()
 privmsg chan xs = do
