@@ -112,14 +112,15 @@ checkNumArgs (x, Just y) n
     | otherwise        =
       Just . T.pack $ errMsg
   where errMsg | x == 0 && y == 0 = "no arguments"
-               | x == y           =
-                 show x ++ " argument" ++ if x == 1 then "" else "s"
+               | x == y           = sayNumArgs x
                | otherwise        =
                  "between " ++ show x ++ " and " ++ show y ++ " arguments"
 
 checkNumArgs (x, Nothing) n
     | n >= x    = Nothing
     | otherwise =
-      Just . T.pack $ "greater than " ++ show x ++ " argument" ++ 
-      if x == 1 then "" else "s"
+      Just . T.pack $ "greater than " ++ sayNumArgs x
+
+sayNumArgs :: Int -> String
+sayNumArgs x = show x ++ " argument" ++ if x == 1 then "" else "s"
 
