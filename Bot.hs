@@ -37,7 +37,7 @@ import Control.Concurrent hiding (newChan, readChan, writeChan)
 
 makeBot :: Text -> [Text] -> Map Text Command -> [Pattern] -> [Special] -> HostName -> Int -> String -> IO Bot
 makeBot name chans comms patterns specials host port db = do
-    h    <- connectTo host (PortNumber $ fromIntegral port)
+    h    <- connectTo host (PortNumber (fromIntegral port))
     hSetBuffering h LineBuffering
     ref  <- newIORef (M.fromList [])
     conn <- open db
@@ -57,7 +57,7 @@ joinChan :: Bot -> Text -> IO ()
 joinChan bot@Bot{ botHandle = h, botChannels = chans } chan = do
     T.hPutStrLn h (T.concat ["JOIN ", chan])
     (inchan, outchan) <- newChan
-    n <- forkIO $ handleChan bot outchan chan 
+    n <- forkIO (handleChan bot outchan chan)
     atomicModifyIORef' chans (\m -> (M.insert chan (n, inchan) m, ()))
 
 mainLoop :: MVar () -> [Special] -> Bot -> IO ()
@@ -94,23 +94,23 @@ call :: Bot -> Text -> Text -> Text -> [Text] -> IO ()
 call bot@Bot{ botHandle = h, botDbConn = conn } usr chan comm args =
     case M.lookup comm (botCommands bot) of
         Nothing ->
-            privmsg' h chan $ T.append "Command not found: " comm
+            privmsg' h chan (T.append "Command not found: " comm)
         Just (Command _ _ numArgs f) -> 
             case checkNumArgs numArgs (length args) of
                 Nothing  -> 
                     runReaderT (f args) (RequestInfo chan usr h conn)
-                Just err -> privmsg' h chan $ errMsg comm err
+                Just err -> privmsg' h chan (errMsg comm err)
   where errMsg comm err = 
             T.concat [ "Incorrect number of arguments to command "
                      , comm, " (expected ", err, ", got "
-                     , T.pack . show . length $ args, ")"
+                     , T.pack (show (length args)), ")"
                      ]
 
 checkNumArgs :: (Int, Maybe Int) -> Int -> Maybe Text
 checkNumArgs (x, Just y) n
     | n >= x && n <= y = Nothing
     | otherwise        =
-      Just . T.pack $ errMsg
+      Just (T.pack errMsg)
   where errMsg | x == 0 && y == 0 = "no arguments"
                | x == y           = sayNumArgs x
                | otherwise        =
@@ -119,7 +119,7 @@ checkNumArgs (x, Just y) n
 checkNumArgs (x, Nothing) n
     | n >= x    = Nothing
     | otherwise =
-      Just . T.pack $ "greater than " ++ sayNumArgs x
+      Just (T.pack ("greater than " ++ sayNumArgs x))
 
 sayNumArgs :: Int -> String
 sayNumArgs x = show x ++ " argument" ++ if x == 1 then "" else "s"

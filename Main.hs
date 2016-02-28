@@ -37,7 +37,7 @@ specialJoin Bot { botHandle = h, botDbConn = conn } xs =
   where parseJoin t0 =
             guard (T.head t0 == ':') *>
             let (name, t1) = T.break (=='!') (T.tail t0)
-            in guard (not $ T.null t1) *>
+            in guard (not (T.null t1)) *>
             let t2 = T.dropWhile (/=' ') t1
             in guard (T.length t2 >= 5) *>
             let xs = T.take 5 (T.tail t2)
@@ -81,7 +81,7 @@ commandHelp =
             Just comm -> do
                 say (commandDesc comm)
                 say (T.concat ["Syntax: !", c, " ", commandSyntax comm])
-            Nothing -> say $ "Command not found: " `T.append` c
+            Nothing -> say ("Command not found: " `T.append` c)
 
         help [] = do
             usr <- asks reqUser
@@ -235,7 +235,7 @@ commandWeebMedia =
         (0, Just 0)
         (const weebmedia)
   where weebmedia = do n <- liftIO (randomRIO (1, 17824) :: IO Int)
-                       say (T.append root (T.pack $ show n))
+                       say (T.append root (T.pack (show n)))
         root = "http://www.animenewsnetwork.com/\
                \encyclopedia/manga.php?id="
 
@@ -278,7 +278,7 @@ commandCuddle =
   where cuddle []  = liftIO randomHug >>= say
         cuddle [n] = do usr <- asks reqUser
                         hug <- liftIO randomHug
-                        privmsg n $ T.concat ["From ", usr, ": ", hug]
+                        privmsg n (T.concat ["From ", usr, ": ", hug])
         randomHug  = do n <- randomRIO (0, 1000) :: IO Int
                         if n == 0
                           then return "Fuck off"
@@ -304,7 +304,7 @@ commandGelbooru =
                     if null imgs
                         then noImages
                         else do img <- choice imgs
-                                return $ "http://gelbooru.com/" ++ img
+                                return ("http://gelbooru.com/" ++ img)
         root xs     = case xs of
                           [] -> "http://gelbooru.com/index.php?page=post&\
                                 \s=list&pid="
@@ -315,7 +315,7 @@ commandGelbooru =
         numPages    = do
             x <- attr ("href" :: String) $ ("a" :: String) @: 
                  [("alt" :: String) @= "last page"]
-            let n = reverse . takeWhile isDigit . reverse $ x
+            let n = reverse (takeWhile isDigit (reverse x))
             return (read n :: Int)
         images      = do
             let link = attr ("href" :: String) $ ("a" :: String) @: []
@@ -372,7 +372,7 @@ commandTell =
 -- This blocks the main thread forever. I'm sure there's a cleaner way to
 -- do this, but this is what I'm doin'.
 waitForever :: IO ()
-waitForever = forever $ threadDelay maxBound
+waitForever = forever (threadDelay maxBound)
 
 channels :: [Text]
 channels = ["#lounge", "#comfy", "#secret", "#pepe", "#anime", "#bottesting"]

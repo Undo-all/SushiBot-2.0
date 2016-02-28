@@ -13,11 +13,11 @@ import Data.Text.Lazy (toStrict)
 
 parseMsg :: Text -> Maybe Msg
 parseMsg xs
-    | T.take 4 xs == "PING" = Just $ Ping (T.drop 6 xs)
+    | T.take 4 xs == "PING" = Just (Ping (T.drop 6 xs))
     | otherwise             = parsePM xs 
 
 parsePM :: Text -> Maybe Msg
-parsePM xs = uncurry PM . fmap parseCall <$> parsePrivMsg xs
+parsePM t0 = uncurry PM . fmap parseCall <$> parsePrivMsg t0
   where parseCall (PrivMsg user xs)
             | isCommand xs = let (comm:args) = getArgs (T.tail xs)
                              in Call user comm args
@@ -34,7 +34,7 @@ append tmp res = let xs = toStrict (toLazyText (flush <> tmp))
 
 getArgs' :: Builder -> [Text] -> Bool -> Text -> [Text]
 getArgs' tmp res _ txt
-    | T.null txt = reverse $ append tmp res
+    | T.null txt = reverse (append tmp res)
 
 getArgs' tmp res True txt
     | T.head txt == '\\' =
@@ -57,7 +57,7 @@ parsePrivMsg :: Text -> Maybe (Text, PrivMsg)
 parsePrivMsg t0 = 
     guard (T.head t0 == ':') *>
     let (name, t1) = T.break (=='!') (T.tail t0)
-    in guard (not $ T.null t1) *>
+    in guard (not (T.null t1)) *>
     let t2 = T.dropWhile (/=' ') t1
     in guard (T.length t2 >= 8) *>
     let (priv, t3) = T.splitAt 8 (T.tail t2)
