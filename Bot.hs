@@ -3,8 +3,8 @@
 module Bot
 ( Bot(..)
 , Command(..)
-, Pattern
-, Special
+, Msg(..)
+, CustomHandler
 , RequestInfo(..)
 , makeBot
 , say
@@ -35,8 +35,8 @@ import Database.SQLite.Simple (open)
 import qualified Data.Map.Strict as M
 import Control.Concurrent hiding (newChan, readChan, writeChan)
 
-makeBot :: Text -> [Text] -> Map Text Command -> [Pattern] -> [Special] -> HostName -> Int -> String -> IO Bot
-makeBot name chans comms patterns specials host port db = do
+makeBot :: Text -> [Text] -> Map Text Command -> CustomHandler -> HostName -> Int -> String -> IO Bot
+makeBot name chans comms patterns host port db = do
     h <- connectTo host (PortNumber (fromIntegral port))
     hSetBuffering h LineBuffering -- Line buffering is most efficient.
 
@@ -49,7 +49,7 @@ makeBot name chans comms patterns specials host port db = do
     -- The commands are deepseq'd here so that there isn't a noticable
     -- delay when using commands for the first time in a connection.
     let bot = comms `deepseq` Bot name h ref comms patterns conn
-    forkIO (mainLoop wait specials bot)
+    forkIO (mainLoop wait bot)
 
     T.hPutStrLn h (T.concat ["USER ", name, " ", name, " ", name, " :", name])
     T.hPutStrLn h (T.concat ["NICK ", name])
@@ -66,12 +66,12 @@ joinChan bot@Bot{ botHandle = h, botChannels = chans } chan = do
     n <- forkIO (handleChan bot outchan chan)
     atomicModifyIORef' chans (\m -> (M.insert chan (n, inchan) m, ()))
 
-mainLoop :: MVar () -> [Special] -> Bot -> IO ()
-mainLoop wait specials bot@Bot{ botHandle = h } = forever $ do
-    xs <- T.hGetLine h
-    mapM_ (\s -> s bot xs) specials 
-    case parseMsg xs of
-        Just msg -> handleMsg wait bot msg
+mainLoop :: MVar () -> Bot -> IO ()
+mainLoop wait bot@Bot{ botHandle = h } = forever $ do
+    msg <- parseMsg <$> T.hGetLine h 
+    case msg of
+        Just msg -> do (botCustomHandler bot) bot msg
+                       handleMsg wait bot msg
         Nothing  -> return ()  
 
 handleMsg :: MVar () -> Bot -> Msg -> IO ()
@@ -88,14 +88,14 @@ handleMsg wait bot msg = case msg of
             Just (_, inchan) -> writeChan inchan pm 
             Nothing          -> return ()
 
+    _ -> return ()
+
 handleChan :: Bot -> OutChan PrivMsg -> Text -> IO ()
 handleChan bot@Bot{ botHandle = h, botDbConn = conn } outchan chan = forever $ do
     msg <- readChan outchan
     case msg of
         Call usr comm args -> call bot usr chan comm args
-        PrivMsg usr xs ->
-          let reqInfo = RequestInfo chan usr h conn
-          in runReaderT (mapM_ ($ xs) (botPatterns bot)) reqInfo
+        PrivMsg usr xs -> return ()
 
 call :: Bot -> Text -> Text -> Text -> [Text] -> IO ()
 call bot@Bot{ botHandle = h, botDbConn = conn } usr chan comm args =

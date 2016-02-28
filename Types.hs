@@ -12,27 +12,27 @@ import Database.SQLite.Simple (Connection)
 import Control.Concurrent.Chan.Unagi (InChan)
 
 data Bot = Bot
-         { botName     :: Text
-         , botHandle   :: Handle
+         { botName :: Text
+         , botHandle :: Handle
          -- ThreadId may or may not actually be necessary.
          , botChannels :: IORef (Map Text (ThreadId, InChan PrivMsg)) 
          , botCommands :: Map Text Command
-         , botPatterns :: [Pattern]
+         , botCustomHandler :: CustomHandler
          -- Database connection is stored so that it doesn't need to
          -- constantly be opened and closed.
-         , botDbConn   :: Connection
+         , botDbConn :: Connection
          } 
 
 data Command = Command
-             { commandDesc   :: Text
+             { commandDesc :: Text
              , commandSyntax :: Text
-             , commandArgs   :: (Int, Maybe Int)
-             , commandFunc   :: [Text] -> ReaderT RequestInfo IO ()
+             , commandArgs :: (Int, Maybe Int)
+             , commandFunc :: [Text] -> ReaderT RequestInfo IO ()
              }
 
 data RequestInfo = RequestInfo
-                 { reqChan   :: Text
-                 , reqUser   :: Text
+                 { reqChan :: Text
+                 , reqUser :: Text
                  , reqHandle :: Handle
                  , reqDbConn :: Connection
                  }
@@ -41,6 +41,5 @@ data RequestInfo = RequestInfo
 instance NFData Command where
     rnf (Command d s a f) = rnf d `seq` rnf s `seq` rnf a `seq` rnf f `seq` ()
 
-type Pattern = Text -> ReaderT RequestInfo IO ()
-type Special = Bot -> Text -> IO ()
+type CustomHandler = Bot -> Msg -> IO ()
 

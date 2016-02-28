@@ -29,23 +29,11 @@ choice xs = (xs !!) <$> randomRIO (0, length xs - 1)
 
 -- This exists to handle incoming messages and send them their queued
 -- message, if they have one.
-specialJoin :: Special
-specialJoin Bot { botHandle = h, botDbConn = conn } xs = 
-    case parseJoin xs of
-        Just name -> do
-            msg <- runMaybeT (getTold name)
-            maybe (return ()) (privmsg' h name) msg
-        Nothing   -> return ()
-  where parseJoin t0 =
-            guard (T.head t0 == ':') *>
-            let (name, t1) = T.break (=='!') (T.tail t0)
-            in guard (not (T.null t1)) *>
-            let t2 = T.dropWhile (/=' ') t1
-            in guard (T.length t2 >= 5) *>
-            let xs = T.take 5 (T.tail t2)
-            in guard (xs == "JOIN ") *>
-            pure name
-        getTold name = do
+handler :: CustomHandler
+handler Bot{ botHandle = h, botDbConn = conn } (Join name _) = do
+    msg <- runMaybeT (getTold name)
+    maybe (return ()) (privmsg' h name) msg
+  where getTold name = do
             [Only userExists] <- liftIO (query conn queryExists (Only name))
             guard userExists
             [Only hasTold] <- liftIO (query conn queryHasTold (Only name))
@@ -54,6 +42,7 @@ specialJoin Bot { botHandle = h, botDbConn = conn } xs =
                 [(from, msg)] <- query conn queryTold (Only name)
                 execute conn queryRemove (Only name)
                 return (T.concat [from, " wanted me to tell you: ", msg])
+
         queryExists  = "SELECT (count(*) > 0) FROM users WHERE user_name = ?"
         queryHasTold = "SELECT user_has_told FROM users WHERE user_name = ?"
         queryTold    = "SELECT user_told_from, user_told_msg FROM users \
@@ -61,6 +50,8 @@ specialJoin Bot { botHandle = h, botDbConn = conn } xs =
         queryRemove  = "UPDATE users SET user_has_told = 0,\
                        \user_told_from = NULL, user_told_msg = NULL \
                        \WHERE user_name = ?"
+
+handler _ _ = return ()
 
 commandInfo :: Command
 commandInfo =
@@ -411,7 +402,7 @@ main = do conn <- open "botdata.db"
                         \    user_told_from TEXT,\
                         \    user_told_msg TEXT\
                         \)"
-          makeBot "SushiBot" channels commands [] [specialJoin]
+          makeBot "SushiBot" channels commands handler
                   "irc.sushigirl.tokyo" 6667 "botdata.db"
           waitForever
 

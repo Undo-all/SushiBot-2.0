@@ -2,9 +2,8 @@ module Msg where
 
 import Data.Text (Text)
 
--- TODO: Add more Msg types, make Pattern in module Types be of the type
--- Bot -> Msg -> IO () and remove Special type.
 data Msg = Ping Text
+         | Join Text Text
          | PM Text PrivMsg
          deriving (Eq, Show)
 

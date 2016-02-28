@@ -7,18 +7,35 @@ import Data.Char
 import Data.Monoid
 import Control.Monad
 import Data.Text (Text)
+import Control.Applicative
 import Data.Text.Lazy.Builder
 import qualified Data.Text as T
 import Data.Text.Lazy (toStrict)
 
--- TODO: Implement more parsers for more Msg types.
+-- All the parsing here is ugly and applicative for performance reasons.
+-- It'll get clean when ApplicativeDo comes out though.
+
 parseMsg :: Text -> Maybe Msg
 parseMsg xs
     | T.take 4 xs == "PING" = Just (Ping (T.drop 6 xs))
-    | otherwise             = parsePM xs 
+    | otherwise =
+      guard (T.head xs == ':') *>
+      let (name, t1) = T.break (=='!') (T.tail xs)
+          t2         = T.dropWhile (/=' ') t1
+      in guard (not (T.null t2)) *>
+      let t3 = T.tail t2
+      in parseJoin name t3 <|> parsePM name t3
 
-parsePM :: Text -> Maybe Msg
-parsePM t0 = uncurry PM . fmap parseCall <$> parsePrivMsg t0
+parseJoin :: Text -> Text -> Maybe Msg
+parseJoin name t0 =
+    guard (T.length t0 >= 6) *>
+    let (join, t1) = T.splitAt 6 t0
+    in guard (join == "JOIN :") *>
+    let chan = T.takeWhile (/='\r') t1
+    in pure (Join name chan)
+
+parsePM :: Text -> Text -> Maybe Msg
+parsePM name t0 = uncurry PM . fmap parseCall <$> parsePrivMsg name t0
   where parseCall (PrivMsg user xs)
             | isCommand xs = let (comm:args) = getArgs (T.tail xs)
                              in Call user comm args
@@ -53,19 +70,13 @@ getArgs' tmp res False txt
     | otherwise            =
       getArgs' (tmp <> singleton (T.head txt)) res False (T.tail txt)
 
--- Instead of a nice, clean `do` block, this is a horrifying applicative
--- thing for performance reasons.
-parsePrivMsg :: Text -> Maybe (Text, PrivMsg)
-parsePrivMsg t0 = 
-    guard (T.head t0 == ':') *>
-    let (name, t1) = T.break (=='!') (T.tail t0)
-    in guard (not (T.null t1)) *>
-    let t2 = T.dropWhile (/=' ') t1
-    in guard (T.length t2 >= 8) *>
-    let (priv, t3) = T.splitAt 8 (T.tail t2)
+parsePrivMsg :: Text -> Text -> Maybe (Text, PrivMsg)
+parsePrivMsg name t0 = 
+    guard (T.length t0 >= 8) *>
+    let (priv, t1) = T.splitAt 8 t0
     in guard (priv == "PRIVMSG ") *>
-    let (chan, t4) = T.break (==' ') t3
-        t5         = T.drop 2 t4
-        msg        = T.takeWhile (/='\r') t5
+    let (chan, t2) = T.break (==' ') t1
+        t3         = T.drop 2 t2
+        msg        = T.takeWhile (/='\r') t3
     in pure (T.toLower chan, PrivMsg name msg)
 
