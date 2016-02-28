@@ -4,7 +4,6 @@ module Main (main) where
 
 import Bot
 import Data.Char
-import Data.Time
 import Data.Maybe
 import Control.Monad
 import System.Random
@@ -86,7 +85,6 @@ commandHelp =
 
         help [] = do
             usr <- asks reqUser
-            h   <- asks reqHandle
             say "List of commands sent in a PM."
             privmsgs usr descriptions
 
@@ -381,6 +379,7 @@ channels = ["#lounge", "#comfy", "#secret", "#pepe", "#anime", "#bottesting"]
 
 commands :: Map Text Command
 commands = M.fromList [ ("info", commandInfo)
+                      , ("source", commandSource)
                       , ("help", commandHelp)
                       , ("say", commandSay)
                       , ("act", commandAct)

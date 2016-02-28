@@ -3,8 +3,8 @@
 module Bot
 ( Bot(..)
 , Command(..)
-, Pattern(..)
-, Special(..)
+, Pattern
+, Special
 , RequestInfo(..)
 , makeBot
 , say
@@ -61,7 +61,7 @@ joinChan bot@Bot{ botHandle = h, botChannels = chans } chan = do
     atomicModifyIORef' chans (\m -> (M.insert chan (n, inchan) m, ()))
 
 mainLoop :: MVar () -> [Special] -> Bot -> IO ()
-mainLoop wait specials bot@Bot{ botHandle = h, botChannels = ref } = forever $ do
+mainLoop wait specials bot@Bot{ botHandle = h } = forever $ do
     xs    <- T.hGetLine h
     mapM_ (\s -> s bot xs) specials 
     case parseMsg xs of
