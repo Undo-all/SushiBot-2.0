@@ -54,14 +54,14 @@ makeBot name chans comms patterns specials host port db = do
     return bot
 
 joinChan :: Bot -> Text -> IO ()
-joinChan bot@(Bot { botHandle = h, botChannels = chans }) chan = do
+joinChan bot@Bot{ botHandle = h, botChannels = chans } chan = do
     T.hPutStrLn h (T.concat ["JOIN ", chan])
     (inchan, outchan) <- newChan
     n <- forkIO $ handleChan bot outchan chan 
     atomicModifyIORef' chans (\m -> (M.insert chan (n, inchan) m, ()))
 
 mainLoop :: MVar () -> [Special] -> Bot -> IO ()
-mainLoop wait specials bot@(Bot { botHandle = h, botChannels = ref }) = forever $ do
+mainLoop wait specials bot@Bot{ botHandle = h, botChannels = ref } = forever $ do
     xs    <- T.hGetLine h
     mapM_ (\s -> s bot xs) specials 
     case parseMsg xs of
@@ -82,7 +82,7 @@ handleMsg wait bot msg = case msg of
             Nothing          -> return ()
 
 handleChan :: Bot -> OutChan PrivMsg -> Text -> IO ()
-handleChan bot@(Bot { botHandle = h, botDbConn = conn }) outchan chan = forever $ do
+handleChan bot@Bot{ botHandle = h, botDbConn = conn } outchan chan = forever $ do
     msg <- readChan outchan
     case msg of
         Call usr comm args -> call bot usr chan comm args
@@ -91,7 +91,7 @@ handleChan bot@(Bot { botHandle = h, botDbConn = conn }) outchan chan = forever 
           in runReaderT (mapM_ ($ xs) (botPatterns bot)) reqInfo
 
 call :: Bot -> Text -> Text -> Text -> [Text] -> IO ()
-call bot@(Bot { botHandle = h, botDbConn = conn }) usr chan comm args =
+call bot@Bot{ botHandle = h, botDbConn = conn } usr chan comm args =
     case M.lookup comm (botCommands bot) of
         Nothing ->
             privmsg' h chan $ T.append "Command not found: " comm

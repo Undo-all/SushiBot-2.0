@@ -235,7 +235,7 @@ commandWeebMedia =
         "Get a random anime or manga off ANN."
         ""
         (0, Just 0)
-        (\_ -> weebmedia)
+        (const weebmedia)
   where weebmedia = do n <- liftIO (randomRIO (1, 17824) :: IO Int)
                        say (T.append root (T.pack $ show n))
         root = "http://www.animenewsnetwork.com/\
