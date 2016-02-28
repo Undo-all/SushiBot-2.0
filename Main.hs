@@ -16,6 +16,7 @@ import Control.Monad.Reader
 import Data.Map.Strict (Map)
 import Database.SQLite.Simple
 import qualified Data.Text as T
+import Control.Monad.Trans.Maybe
 import qualified Data.Text.IO as T
 import qualified Data.Map.Strict as M
 
@@ -31,7 +32,7 @@ specialJoin :: Special
 specialJoin Bot { botHandle = h, botDbConn = conn } xs = 
     case parseJoin xs of
         Just name -> do
-            msg <- getTold name
+            msg <- runMaybeT (getTold name)
             maybe (return ()) (privmsg' h name) msg
         Nothing   -> return ()
   where parseJoin t0 =
@@ -44,21 +45,14 @@ specialJoin Bot { botHandle = h, botDbConn = conn } xs =
             in guard (xs == "JOIN ") *>
             pure name
         getTold name = do
-            [Only userExists] <- query conn queryExists (Only name)
-            if userExists
-              then do
-                  [Only hasTold] <- query conn queryHasTold (Only name)
-                  if hasTold
-                    then do 
-                        [(from, msg)] <- query conn queryTold (Only name)
-                        execute conn queryRemove (Only name)
-                        return . Just $ T.concat
-                            [ from
-                            , " wanted me to tell you: "
-                            , msg
-                            ]
-                    else return Nothing
-              else return Nothing
+            [Only userExists] <- liftIO (query conn queryExists (Only name))
+            guard userExists
+            [Only hasTold] <- liftIO (query conn queryHasTold (Only name))
+            guard hasTold
+            liftIO $ do
+                [(from, msg)] <- query conn queryTold (Only name)
+                execute conn queryRemove (Only name)
+                return (T.concat [from, " wanted me to tell you: ", msg])
         queryExists  = "SELECT (count(*) > 0) FROM users WHERE user_name = ?"
         queryHasTold = "SELECT user_has_told FROM users WHERE user_name = ?"
         queryTold    = "SELECT user_told_from, user_told_msg FROM users \
@@ -84,19 +78,21 @@ commandHelp =
         "(command)"
         (0, Just 1)
         help
-  where help [c] =
-            case M.lookup c commands of
-                Just comm -> do
-                    say (commandDesc comm)
-                    say $ T.concat [ "Syntax: !", c, " ", commandSyntax comm ]
-                Nothing -> say $ "Command not found: " `T.append` c
-        help []  = do usr <- asks reqUser
-                      h   <- asks reqHandle
-                      say "List of commands sent in a PM."
-                      privmsgs usr xs
-        xs       = zipWith (\x y -> T.concat [x, " - ", y]) 
-                           (M.keys commands)
-                           (map commandDesc (M.elems commands))
+  where help [c] = case M.lookup c commands of
+            Just comm -> do
+                say (commandDesc comm)
+                say (T.concat ["Syntax: !", c, " ", commandSyntax comm])
+            Nothing -> say $ "Command not found: " `T.append` c
+
+        help [] = do
+            usr <- asks reqUser
+            h   <- asks reqHandle
+            say "List of commands sent in a PM."
+            privmsgs usr descriptions
+
+        descriptions = zipWith (\x y -> T.concat [x, " - ", y])
+                               (M.keys commands)
+                               (map commandDesc (M.elems commands))
 
 commandSay :: Command
 commandSay =
@@ -155,20 +151,23 @@ commandKill =
         kill
   where kill [n] 
             | n `elem` fuckYous = say "Fuck you too, buddy."
-            | otherwise         = do
+            | otherwise = do
                 usr <- asks reqUser
                 if n == usr || n == "me" || n == "us"
                   then say suicide
-                  else say $ kills n
+                  else say (kills n)
+
         fuckYous = ["SushiBot", "myself", "hisself", "herself", "itself"
                    , "his self", "her self", "its self", "yourself", "bot"
                    , "it self", "xemself", "bots", "sushi", "undoall"
                    , "thyself", "thy self", "all bots", "sushi bot"
                    , "themselves", "them selves", "themself", "them self"
                    ]
+
         kills n  = T.concat [ "If a shitty IRC bot could kill ", n
                             , ", than someone would have done it already."
                             ]
+
         suicide  = "I would link to a suicide hotline, but considering the \
                    \fact that you're trying to use an IRC bot to kill \
                    \yourself, I'm not too worried."
@@ -227,7 +226,7 @@ commandOrder =
   where order [sushi] = do
             menu <- liftIO getMenu
             case M.lookup (T.toLower sushi) menu of
-                Just art -> mapM_ say art
+                Just art -> sayList art
                 Nothing  -> say "I'm not familiar with that kind of sushi."
 
 commandWeebMedia :: Command
@@ -236,11 +235,11 @@ commandWeebMedia =
         "Get a random anime or manga off ANN."
         ""
         (0, Just 0)
-        weebmedia
-  where weebmedia _ = do n <- liftIO (randomRIO (1, 17824) :: IO Int)
-                         say (T.append root (T.pack $ show n))
-        root        = "http://www.animenewsnetwork.com/\
-                      \encyclopedia/manga.php?id="
+        (\_ -> weebmedia)
+  where weebmedia = do n <- liftIO (randomRIO (1, 17824) :: IO Int)
+                       say (T.append root (T.pack $ show n))
+        root = "http://www.animenewsnetwork.com/\
+               \encyclopedia/manga.php?id="
 
 command8ball :: Command
 command8ball =
@@ -288,6 +287,7 @@ commandCuddle =
                           else (["(>^_^)>", "<(^o^<)", "＼(^o^)／"] !!) <$> 
                                randomRIO (0, 2)
 
+-- I'm not even touching this one...
 commandGelbooru :: Command
 commandGelbooru =
     Command
@@ -332,11 +332,11 @@ commandGetSyntax =
         (1, Just 1)
         syntax
   where syntax [n] = case M.lookup n commands of
-                         Just comm ->
-                             say $ T.concat [ "Syntax: !", n, " "
-                                            , commandSyntax comm
-                                            ]
-                         Nothing   -> say $ "Command not found: " `T.append` n
+            Just comm ->
+                say $ T.concat [ "Syntax: !", n, " "
+                               , commandSyntax comm
+                               ]
+            Nothing -> say ("Command not found: " `T.append` n)
 
 commandTime :: Command
 commandTime =
@@ -358,11 +358,13 @@ commandTell =
             conn <- asks reqDbConn
             liftIO (queueMessage conn user name (T.unwords msg))
             say "Messaged queued."
+
         queueMessage conn from to msg = do
             [Only userExists] <- query conn queryExists (Only to)
             if userExists
               then execute conn queryUpdate (from, msg, to)
               else execute conn queryInsert (to, True, from, msg)
+
         queryExists = "SELECT (count(*) > 0) FROM users WHERE user_name = ?"
         queryUpdate = "UPDATE users SET user_has_told = 1,\
                       \user_told_from = ?, user_told_msg = ? \

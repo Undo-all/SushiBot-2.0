@@ -10,7 +10,8 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 
 privmsg' :: Handle -> Text -> Text -> IO ()
-privmsg' h chan xs = T.hPutStrLn h $ T.concat ["PRIVMSG ", chan, " :", xs]
+privmsg' h chan xs =
+    T.hPutStrLn h (T.concat ["PRIVMSG ", chan, " :", xs])
 
 privmsgs' :: Handle -> Text -> [Text] -> IO ()
 privmsgs' h chan xs =
@@ -20,12 +21,12 @@ privmsgs' h chan xs =
 privmsg :: Text -> Text -> ReaderT RequestInfo IO ()
 privmsg chan xs = do
     h <- asks reqHandle
-    liftIO $ privmsg' h chan xs
+    liftIO (privmsg' h chan xs)
 
 privmsgs :: Text -> [Text] -> ReaderT RequestInfo IO ()
 privmsgs chan xs = do
     h <- asks reqHandle
-    liftIO $ privmsgs' h chan xs
+    liftIO (privmsgs' h chan xs)
 
 say :: Text -> ReaderT RequestInfo IO ()
 say xs = do
@@ -40,7 +41,7 @@ sayList xs = do
 privact :: Text -> Text -> ReaderT RequestInfo IO ()
 privact chan xs = do
     h <- asks reqHandle
-    liftIO $ privmsg' h chan $ T.concat ["\0001ACTION ", xs, "\0001"]
+    liftIO (privmsg' h chan (T.concat ["\0001ACTION ", xs, "\0001"]))
 
 act :: Text -> ReaderT RequestInfo IO ()
 act xs = do
