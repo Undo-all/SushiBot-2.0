@@ -37,18 +37,24 @@ import Control.Concurrent hiding (newChan, readChan, writeChan)
 
 makeBot :: Text -> [Text] -> Map Text Command -> [Pattern] -> [Special] -> HostName -> Int -> String -> IO Bot
 makeBot name chans comms patterns specials host port db = do
-    h    <- connectTo host (PortNumber (fromIntegral port))
-    hSetBuffering h LineBuffering
-    ref  <- newIORef (M.fromList [])
-    conn <- open db
-    wait <- newEmptyMVar
+    h <- connectTo host (PortNumber (fromIntegral port))
+    hSetBuffering h LineBuffering -- Line buffering is most efficient.
 
+    ref  <- newIORef (M.fromList [])
+    conn <- open db 
+    -- This MVar exists to block from joining the channels until we've
+    -- responded to at least one PING.
+    wait <- newEmptyMVar 
+    
+    -- The commands are deepseq'd here so that there isn't a noticable
+    -- delay when using commands for the first time in a connection.
     let bot = comms `deepseq` Bot name h ref comms patterns conn
     forkIO (mainLoop wait specials bot)
 
     T.hPutStrLn h (T.concat ["USER ", name, " ", name, " ", name, " :", name])
     T.hPutStrLn h (T.concat ["NICK ", name])
-
+    
+    -- Block until wait is full.
     readMVar wait
     mapM_ (joinChan bot) chans 
     return bot
@@ -62,7 +68,7 @@ joinChan bot@Bot{ botHandle = h, botChannels = chans } chan = do
 
 mainLoop :: MVar () -> [Special] -> Bot -> IO ()
 mainLoop wait specials bot@Bot{ botHandle = h } = forever $ do
-    xs    <- T.hGetLine h
+    xs <- T.hGetLine h
     mapM_ (\s -> s bot xs) specials 
     case parseMsg xs of
         Just msg -> handleMsg wait bot msg
@@ -72,12 +78,13 @@ handleMsg :: MVar () -> Bot -> Msg -> IO ()
 handleMsg wait bot msg = case msg of
     Ping xs -> do
         T.hPutStrLn (botHandle bot) (T.concat ["PONG :", xs])
-        tryPutMVar wait ()
+        tryPutMVar wait () -- Fills 'wait' MVar, unblocking JOIN commands.
         return ()
 
     PM chan pm -> do
         chans <- readIORef (botChannels bot)
         case M.lookup chan chans of
+            -- We redirect the PrivMsg to the appropriate channel handler.
             Just (_, inchan) -> writeChan inchan pm 
             Nothing          -> return ()
 
@@ -86,7 +93,7 @@ handleChan bot@Bot{ botHandle = h, botDbConn = conn } outchan chan = forever $ d
     msg <- readChan outchan
     case msg of
         Call usr comm args -> call bot usr chan comm args
-        PrivMsg usr xs     ->
+        PrivMsg usr xs ->
           let reqInfo = RequestInfo chan usr h conn
           in runReaderT (mapM_ ($ xs) (botPatterns bot)) reqInfo
 

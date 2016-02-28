@@ -27,6 +27,8 @@ listItems (x:xs) = T.concat [x, ", ", listItems xs]
 choice :: [a] -> IO a
 choice xs = (xs !!) <$> randomRIO (0, length xs - 1)
 
+-- This exists to handle incoming messages and send them their queued
+-- message, if they have one.
 specialJoin :: Special
 specialJoin Bot { botHandle = h, botDbConn = conn } xs = 
     case parseJoin xs of
@@ -400,6 +402,7 @@ commands = M.fromList [ ("info", commandInfo)
                       , ("tell", commandTell)
                       ]
 
+-- TODO: Remove initial execute_ statement?
 main :: IO ()
 main = do conn <- open "botdata.db"
           execute_ conn "CREATE TABLE IF NOT EXISTS users (\

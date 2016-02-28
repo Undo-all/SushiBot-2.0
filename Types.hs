@@ -14,9 +14,12 @@ import Control.Concurrent.Chan.Unagi (InChan)
 data Bot = Bot
          { botName     :: Text
          , botHandle   :: Handle
-         , botChannels :: IORef (Map Text (ThreadId, InChan PrivMsg))
+         -- ThreadId may or may not actually be necessary.
+         , botChannels :: IORef (Map Text (ThreadId, InChan PrivMsg)) 
          , botCommands :: Map Text Command
          , botPatterns :: [Pattern]
+         -- Database connection is stored so that it doesn't need to
+         -- constantly be opened and closed.
          , botDbConn   :: Connection
          } 
 
@@ -34,6 +37,7 @@ data RequestInfo = RequestInfo
                  , reqDbConn :: Connection
                  }
 
+-- So that we can deepseq the botCommands later.
 instance NFData Command where
     rnf (Command d s a f) = rnf d `seq` rnf s `seq` rnf a `seq` rnf f `seq` ()
 

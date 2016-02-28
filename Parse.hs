@@ -11,6 +11,7 @@ import Data.Text.Lazy.Builder
 import qualified Data.Text as T
 import Data.Text.Lazy (toStrict)
 
+-- TODO: Implement more parsers for more Msg types.
 parseMsg :: Text -> Maybe Msg
 parseMsg xs
     | T.take 4 xs == "PING" = Just (Ping (T.drop 6 xs))
@@ -52,7 +53,8 @@ getArgs' tmp res False txt
     | otherwise            =
       getArgs' (tmp <> singleton (T.head txt)) res False (T.tail txt)
 
--- Pls let ApplicativeDo come out soon
+-- Instead of a nice, clean `do` block, this is a horrifying applicative
+-- thing for performance reasons.
 parsePrivMsg :: Text -> Maybe (Text, PrivMsg)
 parsePrivMsg t0 = 
     guard (T.head t0 == ':') *>

@@ -13,6 +13,7 @@ privmsg' :: Handle -> Text -> Text -> IO ()
 privmsg' h chan xs =
     T.hPutStrLn h (T.concat ["PRIVMSG ", chan, " :", xs])
 
+-- May be more efficient than `mapM privmsg'`
 privmsgs' :: Handle -> Text -> [Text] -> IO ()
 privmsgs' h chan xs =
     let pms = map (\x -> T.concat ["PRIVMSG ", chan, " :", x, "\r"]) xs
