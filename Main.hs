@@ -3,6 +3,7 @@
 module Main (main) where
 
 import Bot
+import ViChan
 import Data.Char
 import Data.Maybe
 import Control.Monad
@@ -362,6 +363,57 @@ commandTell =
                       \WHERE user_name = ?"
         queryInsert = "INSERT INTO users VALUES(?, ?, ?, ?)"
 
+sushiUrl :: Text
+sushiUrl = "http://sushigirl.tokyo"
+
+sushiBoards :: [Text]
+sushiBoards = [ "wildcard"
+              , "lounge"
+              , "arcade"
+              , "kawaii"
+              , "kitchen"
+              , "tunes"
+              , "culture"
+              , "silicon"
+              , "yakuza"
+              , "hell"
+              , "lewd"
+              ]
+
+sayPost :: (Text, Post, Post) -> Text
+sayPost (board, op, post) =
+    case postSubject post of
+        Just subj ->
+            T.concat [ "\"", subj, "\" "
+                     , makePostUrl sushiUrl (board, op, post)
+                     ]
+        Nothing -> makePostUrl sushiUrl (board, op, post)
+
+commandRecent :: Command
+commandRecent =
+    Command
+        "Get the most recent post off of SushiChan."
+        "(board)"
+        (0, Just 1)
+        recent
+  where recent [] = do
+            msg <- liftIO . runMaybeT $ do
+                p <- getRecentPost sushiUrl sushiBoards
+                return (sayPost p)
+            maybe err say msg
+
+        recent [board] 
+            | board `notElem` sushiBoards =
+              say (T.concat ["That board doesn't exist!"])
+
+        recent [board] = do
+                msg <- liftIO . runMaybeT $ do
+                    (op, post) <- getLastPost sushiUrl board
+                    return (sayPost (board, op, post))
+                maybe err say msg
+
+        err = say "ERROR: couldn't fetch most recent posts."
+
 -- This blocks the main thread forever. I'm sure there's a cleaner way to
 -- do this, but this is what I'm doin'.
 waitForever :: IO ()
@@ -391,6 +443,7 @@ commands = M.fromList [ ("info", commandInfo)
                       , ("syntax", commandGetSyntax)
                       , ("time", commandTime)
                       , ("tell", commandTell)
+                      , ("recent", commandRecent)
                       ]
 
 -- TODO: Remove initial execute_ statement?
