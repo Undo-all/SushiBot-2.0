@@ -1,57 +1,32 @@
 {-# LANGUAGE OverloadedStrings, DeriveGeneric #-}
 
-module ViChan where
+module ViChan (getRecent, getRecentBoard) where
 
-import Data.Ord
-import Data.List
+import Data.Char
 import Data.Aeson
+import Data.Maybe
 import GHC.Generics
 import Data.Text (Text)
-import Control.Applicative
+import Data.Text.Encoding
 import Control.Monad.Trans
 import Data.Vector (Vector)
 import qualified Data.Text as T
 import Control.Monad.Trans.Maybe
 import qualified Data.Vector as V
-import Control.Concurrent.Async.Lifted
+import Data.ByteString.Lazy (toStrict)
+import qualified Data.ByteString as BS
 import Network.HTTP.Conduit (simpleHttp)
 import qualified Data.HashMap.Strict as HM
 
 data Post = Post
           { postNumber :: {-# UNPACK #-} !Int
-          , postSubject :: !(Maybe Text)
-          , postStickied :: !Bool
-          , postTime :: {-# UNPACK #-} !Int
-{--
-          , postComment :: !(Maybe Text)
-          , postEmail :: !(Maybe Text)
-          , postName :: !(Maybe Text)
-          , postCapcode :: !(Maybe Text)
-          , postTime :: {-# UNPACK #-} !Int
-          , postOmittedPosts :: !(Maybe Int)
-          , postOmittedImages :: !(Maybe Int)
-          , postReplies :: !(Maybe Int)
-          , postImages :: !(Maybe Int)
-          , postStickied :: {-# UNPACK #-} !Bool
-          , postLocked :: {-# UNPACK #-} !Bool
-          , postLastModified :: {-# UNPACK #-} !Int
-          , postThumbnailHeight :: !(Maybe Int)
-          , postThumbnailWidth :: !(Maybe Int)
-          , postImageHeight :: !(Maybe Int)
-          , postFileSize :: !(Maybe Int)
-          , postFileName :: !(Maybe Text)
-          , postFileExtension :: !(Maybe Text)
-          , postMD5 :: !(Maybe Text)
-          , postReplies :: !(Maybe Int) 
---}
+          , postStickied :: {-# UNPACK #-} !Int
           } deriving (Generic, Show)
 
 instance FromJSON Post where
     parseJSON (Object v) =
         Post <$> v .: "no"
-             <*> v .:? "sub"
-             <*> (maybe False toEnum <$> v .:? "sticky")
-             <*> v .: "time"
+             <*> (fromMaybe 0 <$> v .:? "sticky")
     parseJSON _ = mempty
 
 getThreads :: Text -> Text -> MaybeT IO (Vector Post)
@@ -79,42 +54,36 @@ getLastBumped :: Text -> Text -> MaybeT IO Post
 getLastBumped site board =do
     xs <- getThreads site board
     return (V.head (V.filter notStickied xs))
-  where notStickied Post { postStickied = stickied } = not stickied
+  where notStickied Post { postStickied = stickied } = stickied == 0
 
-getLastPost :: Text -> Text -> MaybeT IO (Post, Post)
-getLastPost site board = do
+getRecentBoard :: Text -> Text -> MaybeT IO Text
+getRecentBoard site board = do
     op <- getLastBumped site board
     reply <- V.last <$> getPosts site board (postNumber op)
-    return (op, reply)
+    return (makePostUrl site board op reply)
 
-acrossBoards :: (Text -> Text -> MaybeT IO a) -> Text -> [Text] -> MaybeT IO [(Text, a)]
-acrossBoards f site boards = do
-    asyncs <- mapM async (map (\x -> fmap ((,) x) (f site x)) boards)
-    xs <- mapM wait asyncs
-    return xs
+getRecent :: Text -> IO Text
+getRecent site = do
+    let url = T.concat [site, "/recent.html"]
+    xs <- toStrict <$> simpleHttp (T.unpack url)
+    let b0 = BS.drop 3147 xs
+        b1 = BS.dropWhile (/=quote) b0
+        b2 = BS.tail b1
+        b3 = BS.takeWhile (/=quote) b2
+    return (site `T.append` decodeUtf8 b3)
+  where quote = fromIntegral (ord '"')
 
-getRecentThread :: Text -> [Text] -> MaybeT IO (Text, Post)
-getRecentThread site boards =
-    maximumBy (comparing (postTime . snd)) <$>
-    acrossBoards getLastBumped site boards
-
-getRecentPost :: Text -> [Text] -> MaybeT IO (Text, Post, Post)
-getRecentPost site boards = 
-    maximumBy (comparing (postTime . thrd)) . map (\(x,(y,z)) -> (x,y,z)) <$>
-    acrossBoards getLastPost site boards
-  where thrd (x,y,z) = z
-
-makeThreadUrl :: Text -> (Text, Post) -> Text
-makeThreadUrl site (board, op) =
+makeThreadUrl :: Text -> Text -> Post -> Text
+makeThreadUrl site board post =
     T.concat [ site, "/", board, "/res/"
-             , T.pack (show (postNumber op)), ".html"
+             , T.pack (show (postNumber post)), ".html"
              ]
 
-makePostUrl :: Text -> (Text, Post, Post) -> Text
-makePostUrl site (board, op, post)
-    | postNumber op == postNumber post = makeThreadUrl site (board, op)
+makePostUrl :: Text -> Text -> Post -> Post -> Text
+makePostUrl site board op post
+    | postNumber op == postNumber post = makeThreadUrl site board op
     | otherwise =
-      T.concat [ makeThreadUrl site (board, op), "#"
+      T.concat [ makeThreadUrl site board op, "#"
                , T.pack (show (postNumber post))
                ]
 

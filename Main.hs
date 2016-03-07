@@ -364,7 +364,7 @@ commandTell =
         queryInsert = "INSERT INTO users VALUES(?, ?, ?, ?)"
 
 sushiUrl :: Text
-sushiUrl = "http://sushigirl.tokyo"
+sushiUrl = "https://sushigirl.tokyo"
 
 sushiBoards :: [Text]
 sushiBoards = [ "wildcard"
@@ -380,15 +380,6 @@ sushiBoards = [ "wildcard"
               , "lewd"
               ]
 
-sayPost :: (Text, Post, Post) -> Text
-sayPost (board, op, post) =
-    case postSubject post of
-        Just subj ->
-            T.concat [ "\"", subj, "\" "
-                     , makePostUrl sushiUrl (board, op, post)
-                     ]
-        Nothing -> makePostUrl sushiUrl (board, op, post)
-
 commandRecent :: Command
 commandRecent =
     Command
@@ -397,19 +388,15 @@ commandRecent =
         (0, Just 1)
         recent
   where recent [] = do
-            msg <- liftIO . runMaybeT $ do
-                p <- getRecentPost sushiUrl sushiBoards
-                return (sayPost p)
-            maybe err say msg
+            msg <- liftIO (getRecent sushiUrl)
+            say msg
 
         recent [board] 
             | board `notElem` sushiBoards =
               say (T.concat ["That board doesn't exist!"])
 
         recent [board] = do
-                msg <- liftIO . runMaybeT $ do
-                    (op, post) <- getLastPost sushiUrl board
-                    return (sayPost (board, op, post))
+                msg <- liftIO . runMaybeT $ getRecentBoard sushiUrl board
                 maybe err say msg
 
         err = say "ERROR: couldn't fetch most recent posts."
