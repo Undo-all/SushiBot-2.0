@@ -401,6 +401,22 @@ commandRecent =
 
         err = say "ERROR: couldn't fetch most recent posts."
 
+commandPolitics :: Command
+commandPolitics =
+    Command
+        "Sets the five-minute politics timer."
+        ""
+        (0, Just 0)
+        politics
+  where politics :: [Text] -> ReaderT RequestInfo IO ()
+        politics _ = do
+            say "Politics timer set."
+            h <- asks reqHandle
+            chan <- asks reqChan
+            liftIO (forkIO (threadDelay (10^6*60*5) *> privmsg' h chan time))
+            return ()
+        time = "DING DING DING! Politics timer is up!"
+
 -- This blocks the main thread forever. I'm sure there's a cleaner way to
 -- do this, but this is what I'm doin'.
 waitForever :: IO ()
@@ -431,6 +447,7 @@ commands = M.fromList [ ("info", commandInfo)
                       , ("time", commandTime)
                       , ("tell", commandTell)
                       , ("recent", commandRecent)
+                      , ("politics", commandPolitics)
                       ]
 
 -- TODO: Remove initial execute_ statement?

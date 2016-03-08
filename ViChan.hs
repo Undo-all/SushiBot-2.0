@@ -13,6 +13,7 @@ import Data.Vector (Vector)
 import qualified Data.Text as T
 import Control.Monad.Trans.Maybe
 import qualified Data.Vector as V
+import Control.Applicative (empty)
 import Data.ByteString.Lazy (toStrict)
 import qualified Data.ByteString as BS
 import Network.HTTP.Conduit (simpleHttp)
