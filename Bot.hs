@@ -70,7 +70,7 @@ mainLoop :: MVar () -> Bot -> IO ()
 mainLoop wait bot@Bot{ botHandle = h } = forever $ do
     msg <- parseMsg <$> T.hGetLine h 
     case msg of
-        Just msg -> do (botCustomHandler bot) bot msg
+        Just msg -> do botCustomHandler bot bot msg
                        handleMsg wait bot msg
         Nothing  -> return ()  
 
